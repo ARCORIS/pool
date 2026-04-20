@@ -17,9 +17,9 @@
 package backend
 
 import (
-	"fmt"
-	"runtime"
 	"testing"
+
+	"arcoris.dev/pool/internal/testutil"
 )
 
 // syncPoolTestObject is intentionally compact.
@@ -40,7 +40,7 @@ type syncPoolOtherObject struct {
 
 func TestNewSyncPool(t *testing.T) {
 	t.Run("panics when constructor is nil", func(t *testing.T) {
-		assertPanicMessage(
+		testutil.AssertPanicMessage(
 			t,
 			"NewSyncPool(nil)",
 			func() {
@@ -74,7 +74,7 @@ func TestNewSyncPool(t *testing.T) {
 
 func TestSyncPoolGetPutRoundTrip(t *testing.T) {
 	t.Run("pointer type", func(t *testing.T) {
-		withSingleP(t, func() {
+		testutil.WithStablePoolRoundTrip(t, func() {
 			calls := 0
 			pool := NewSyncPool(func() *syncPoolTestObject {
 				calls++
@@ -95,7 +95,7 @@ func TestSyncPoolGetPutRoundTrip(t *testing.T) {
 	})
 
 	t.Run("value type", func(t *testing.T) {
-		withSingleP(t, func() {
+		testutil.WithStablePoolRoundTrip(t, func() {
 			calls := 0
 			pool := NewSyncPool(func() syncPoolTestObject {
 				calls++
@@ -129,7 +129,7 @@ func TestSyncPoolTypedNilHandling(t *testing.T) {
 	})
 
 	t.Run("backend may round-trip typed nil pointer", func(t *testing.T) {
-		withSingleP(t, func() {
+		testutil.WithStablePoolRoundTrip(t, func() {
 			pool := NewSyncPool(func() *syncPoolTestObject {
 				t.Fatal("constructor must not be called when a typed nil pointer was stored explicitly")
 				return &syncPoolTestObject{}
@@ -150,7 +150,7 @@ func TestSyncPoolNilReceiverPanics(t *testing.T) {
 	t.Run("Get", func(t *testing.T) {
 		var pool *SyncPool[int]
 
-		assertPanicMessage(
+		testutil.AssertPanicMessage(
 			t,
 			"(*SyncPool[int])(nil).Get()",
 			func() {
@@ -163,7 +163,7 @@ func TestSyncPoolNilReceiverPanics(t *testing.T) {
 	t.Run("Put", func(t *testing.T) {
 		var pool *SyncPool[int]
 
-		assertPanicMessage(
+		testutil.AssertPanicMessage(
 			t,
 			"(*SyncPool[int])(nil).Put(1)",
 			func() {
@@ -185,7 +185,7 @@ func TestSyncPoolGetPanicsOnUnexpectedStoredType(t *testing.T) {
 		// have dynamic type T when read back.
 		pool.pool.Put(1)
 
-		assertPanicMessage(
+		testutil.AssertPanicMessage(
 			t,
 			"Get() with scalar value of wrong type stored in embedded sync.Pool",
 			func() {
@@ -203,7 +203,7 @@ func TestSyncPoolGetPanicsOnUnexpectedStoredType(t *testing.T) {
 		var wrong *syncPoolOtherObject
 		pool.pool.Put(wrong)
 
-		assertPanicMessage(
+		testutil.AssertPanicMessage(
 			t,
 			"Get() with typed nil pointer of wrong type stored in embedded sync.Pool",
 			func() {
@@ -230,43 +230,4 @@ func TestUnexpectedTypePanic(t *testing.T) {
 			t.Fatalf("unexpectedTypePanic[*syncPoolTestObject](123) = %q, want %q", got, want)
 		}
 	})
-}
-
-func withSingleP(t *testing.T, fn func()) {
-	t.Helper()
-
-	previous := runtime.GOMAXPROCS(1)
-	t.Cleanup(func() {
-		runtime.GOMAXPROCS(previous)
-	})
-
-	fn()
-}
-
-func assertPanicMessage(t *testing.T, scenario string, fn func(), want string) {
-	t.Helper()
-
-	got := mustPanic(t, scenario, fn)
-	if got != want {
-		t.Fatalf("%s panic message = %q, want %q", scenario, got, want)
-	}
-}
-
-func mustPanic(t *testing.T, scenario string, fn func()) string {
-	t.Helper()
-
-	var panicValue any
-
-	func() {
-		defer func() {
-			panicValue = recover()
-		}()
-		fn()
-	}()
-
-	if panicValue == nil {
-		t.Fatalf("%s: expected panic, got none", scenario)
-	}
-
-	return fmt.Sprint(panicValue)
 }

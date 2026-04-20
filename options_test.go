@@ -17,8 +17,9 @@
 package pool
 
 import (
-	"fmt"
 	"testing"
+
+	"arcoris.dev/pool/internal/testutil"
 )
 
 // optionsHookCalls records which resolved hooks were actually executed.
@@ -53,7 +54,7 @@ type optionsTestValue struct {
 
 func TestOptionsResolve(t *testing.T) {
 	t.Run("panics when New is nil", func(t *testing.T) {
-		assertPanicMessage(
+		testutil.AssertPanicMessage(
 			t,
 			"Options.resolve() with nil New",
 			func() {
@@ -305,32 +306,4 @@ func TestDefaultPolicies(t *testing.T) {
 		noopDrop(&optionsTestObject{count: 1})
 		noopDrop(optionsTestValue{N: 2})
 	})
-}
-
-func assertPanicMessage(t *testing.T, scenario string, fn func(), want string) {
-	t.Helper()
-
-	got := mustPanic(t, scenario, fn)
-	if got != want {
-		t.Fatalf("%s panic message = %q, want %q", scenario, got, want)
-	}
-}
-
-func mustPanic(t *testing.T, scenario string, fn func()) string {
-	t.Helper()
-
-	var panicValue any
-
-	func() {
-		defer func() {
-			panicValue = recover()
-		}()
-		fn()
-	}()
-
-	if panicValue == nil {
-		t.Fatalf("%s: expected panic, got none", scenario)
-	}
-
-	return fmt.Sprint(panicValue)
 }

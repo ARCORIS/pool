@@ -18,8 +18,9 @@ package pool
 
 import (
 	"fmt"
-	"slices"
 	"testing"
+
+	"arcoris.dev/pool/internal/testutil"
 )
 
 // lifecycleTestObject is intentionally mutable.
@@ -31,23 +32,6 @@ type lifecycleTestObject struct {
 	ID     int
 	State  string
 	Buffer []byte
-}
-
-// recordingSink captures values that made it all the way through lifecycle
-// release semantics into backend storage.
-//
-// Tests also optionally attach an event log so the final Put step can be
-// asserted alongside reuse, reset, and drop callbacks.
-type recordingSink[T any] struct {
-	events *[]string
-	puts   []T
-}
-
-func (s *recordingSink[T]) Put(value T) {
-	if s.events != nil {
-		*s.events = append(*s.events, "put")
-	}
-	s.puts = append(s.puts, value)
 }
 
 func TestNewLifecycle(t *testing.T) {
@@ -78,7 +62,7 @@ func TestNewLifecycle(t *testing.T) {
 		lifecycle.ResetForReuse(object)
 		lifecycle.ObserveDrop(object)
 
-		assertEventSequence(t, "newLifecycle hook wiring", events, []string{"reuse", "reset", "drop"})
+		testutil.AssertEventSequence(t, "newLifecycle hook wiring", events, []string{"reuse", "reset", "drop"})
 		if object.State != "clean" {
 			t.Fatalf("object state after ResetForReuse() = %q, want %q", object.State, "clean")
 		}
@@ -133,7 +117,7 @@ func TestLifecycleResetForReuse(t *testing.T) {
 
 		lifecycle.ResetForReuse(object)
 
-		assertEventSequence(t, "ResetForReuse()", events, []string{"reset"})
+		testutil.AssertEventSequence(t, "ResetForReuse()", events, []string{"reset"})
 		if object.State != "clean" {
 			t.Fatalf("object state after ResetForReuse() = %q, want %q", object.State, "clean")
 		}
@@ -162,7 +146,7 @@ func TestLifecycleObserveDrop(t *testing.T) {
 
 		lifecycle.ObserveDrop(object)
 
-		assertEventSequence(t, "ObserveDrop()", events, []string{"drop:11"})
+		testutil.AssertEventSequence(t, "ObserveDrop()", events, []string{"drop:11"})
 	})
 }
 
@@ -174,7 +158,7 @@ func TestLifecycleRelease(t *testing.T) {
 			onDrop: noopDrop[int],
 		}
 
-		assertPanicMessage(
+		testutil.AssertPanicMessage(
 			t,
 			"Release(nil, 1)",
 			func() {
@@ -186,7 +170,7 @@ func TestLifecycleRelease(t *testing.T) {
 
 	t.Run("denied values are dropped without reset or storage", func(t *testing.T) {
 		events := make([]string, 0, 2)
-		sink := &recordingSink[*lifecycleTestObject]{events: &events}
+		sink := &testutil.RecordingSink[*lifecycleTestObject]{Events: &events}
 		object := &lifecycleTestObject{ID: 1, State: "oversized", Buffer: make([]byte, 0, 128<<10)}
 
 		lifecycle := lifecycle[*lifecycleTestObject]{
@@ -208,14 +192,14 @@ func TestLifecycleRelease(t *testing.T) {
 
 		// Admission must observe the pre-reset state. Once reuse is denied,
 		// Release must drop and stop without cleaning or storing the object.
-		assertEventSequence(
+		testutil.AssertEventSequence(
 			t,
 			"Release() denied path",
 			events,
 			[]string{"reuse:oversized", "drop:oversized"},
 		)
-		if len(sink.puts) != 0 {
-			t.Fatalf("sink put count after denied Release() = %d, want 0", len(sink.puts))
+		if len(sink.Puts) != 0 {
+			t.Fatalf("sink put count after denied Release() = %d, want 0", len(sink.Puts))
 		}
 		if object.State != "oversized" {
 			t.Fatalf("object state after denied Release() = %q, want %q", object.State, "oversized")
@@ -227,7 +211,7 @@ func TestLifecycleRelease(t *testing.T) {
 
 	t.Run("accepted values are reset before storage and are not dropped", func(t *testing.T) {
 		events := make([]string, 0, 3)
-		sink := &recordingSink[*lifecycleTestObject]{events: &events}
+		sink := &testutil.RecordingSink[*lifecycleTestObject]{Events: &events}
 		object := &lifecycleTestObject{ID: 2, State: "dirty", Buffer: []byte("payload")}
 
 		lifecycle := lifecycle[*lifecycleTestObject]{
@@ -247,17 +231,17 @@ func TestLifecycleRelease(t *testing.T) {
 
 		lifecycle.Release(sink, object)
 
-		assertEventSequence(
+		testutil.AssertEventSequence(
 			t,
 			"Release() accepted pointer path",
 			events,
 			[]string{"reuse:dirty", "reset", "put"},
 		)
-		if len(sink.puts) != 1 {
-			t.Fatalf("sink put count after accepted Release() = %d, want 1", len(sink.puts))
+		if len(sink.Puts) != 1 {
+			t.Fatalf("sink put count after accepted Release() = %d, want 1", len(sink.Puts))
 		}
-		if sink.puts[0] != object {
-			t.Fatalf("sink stored pointer %p, want original pointer %p", sink.puts[0], object)
+		if sink.Puts[0] != object {
+			t.Fatalf("sink stored pointer %p, want original pointer %p", sink.Puts[0], object)
 		}
 		if object.State != "clean" {
 			t.Fatalf("object state after accepted Release() = %q, want %q", object.State, "clean")
@@ -273,7 +257,7 @@ func TestLifecycleRelease(t *testing.T) {
 		}
 
 		events := make([]string, 0, 3)
-		sink := &recordingSink[value]{events: &events}
+		sink := &testutil.RecordingSink[value]{Events: &events}
 		lifecycle := lifecycle[value]{
 			reuse: func(v value) bool {
 				events = append(events, fmt.Sprintf("reuse:%s", v.State))
@@ -292,25 +276,17 @@ func TestLifecycleRelease(t *testing.T) {
 
 		lifecycle.Release(sink, value{State: "dirty"})
 
-		assertEventSequence(
+		testutil.AssertEventSequence(
 			t,
 			"Release() accepted value path",
 			events,
 			[]string{"reuse:dirty", "reset:dirty", "put"},
 		)
-		if len(sink.puts) != 1 {
-			t.Fatalf("sink put count for value-typed Release() = %d, want 1", len(sink.puts))
+		if len(sink.Puts) != 1 {
+			t.Fatalf("sink put count for value-typed Release() = %d, want 1", len(sink.Puts))
 		}
-		if sink.puts[0].State != "dirty" {
-			t.Fatalf("stored value state = %q, want %q", sink.puts[0].State, "dirty")
+		if sink.Puts[0].State != "dirty" {
+			t.Fatalf("stored value state = %q, want %q", sink.Puts[0].State, "dirty")
 		}
 	})
-}
-
-func assertEventSequence(t *testing.T, scenario string, got []string, want []string) {
-	t.Helper()
-
-	if !slices.Equal(got, want) {
-		t.Fatalf("%s event sequence = %v, want %v", scenario, got, want)
-	}
 }
