@@ -1,3 +1,5 @@
 module arcoris.dev/pool
 
-go 1.26.2
+go 1.25.0
+
+toolchain go1.25.9
