@@ -114,7 +114,7 @@ func TestPoolGet(t *testing.T) {
 
 func TestPoolPut(t *testing.T) {
 	t.Run("accepted pointer values are reset before reuse", func(t *testing.T) {
-		testutil.WithStablePoolRoundTrip(t, func() {
+		testutil.WithControlledSteadyStatePoolRoundTrip(t, func() {
 			calls := poolHookCalls{}
 			events := make([]string, 0, 2)
 			pool := New(Options[*poolTestObject]{
@@ -186,7 +186,7 @@ func TestPoolPut(t *testing.T) {
 	})
 
 	t.Run("rejected pointer values are dropped without reset or reuse", func(t *testing.T) {
-		testutil.WithStablePoolRoundTrip(t, func() {
+		testutil.WithControlledSteadyStatePoolRoundTrip(t, func() {
 			calls := poolHookCalls{}
 			events := make([]string, 0, 2)
 			pool := New(Options[*poolTestObject]{
@@ -252,7 +252,7 @@ func TestPoolPut(t *testing.T) {
 	})
 
 	t.Run("value-typed pools follow the same reuse and drop contract", func(t *testing.T) {
-		testutil.WithStablePoolRoundTrip(t, func() {
+		testutil.WithControlledSteadyStatePoolRoundTrip(t, func() {
 			type value struct {
 				ID    int
 				Dirty bool

@@ -17,7 +17,6 @@
 package backend
 
 import (
-	"runtime"
 	"sync/atomic"
 	"testing"
 
@@ -29,7 +28,7 @@ import (
 //
 // These benchmarks intentionally avoid lifecycle policy concerns such as:
 //   - reset cost;
-//   - reuse-admission logic;
+//   - reuse admission logic;
 //   - drop-path logic;
 //   - public runtime orchestration.
 //
@@ -37,13 +36,17 @@ import (
 // This file exists only to answer the backend questions defined by the
 // benchmark matrix:
 //   - what does a constructor miss cost;
-//   - what does a steady-state Get/Put round trip cost;
+//   - what does a controlled steady-state Get/Put round trip cost;
 //   - how does pointer-like T compare to value T;
-//   - what does the backend look like under parallel access.
+//   - what does the backend look like under realistic parallel access.
 //
 // Benchmark results from this file must therefore be interpreted only as a
 // lower bound for public runtime cost. They are not substitutes for package
 // baselines or lifecycle-path benchmarks.
+//
+// The steady-state loops still apply a small unit of representative mutation
+// before Put. These are backend-focused workload benchmarks, not pure
+// zero-work API-call measurements.
 
 // syncPoolBenchmarkPointer is the canonical pointer-like benchmark shape for
 // backend baselines.
@@ -76,20 +79,6 @@ var (
 	syncPoolBenchmarkValueSink   syncPoolBenchmarkValue
 )
 
-// reportPerOpMetric publishes a total counter as a per-iteration benchmark
-// metric.
-//
-// The helper keeps metric formatting consistent across the backend benchmark
-// suite and avoids repeating the same float conversion boilerplate. The helper
-// intentionally does nothing for empty runs.
-func reportPerOpMetric(b *testing.B, total uint64, unit string) {
-	b.Helper()
-	if b.N == 0 {
-		return
-	}
-	b.ReportMetric(float64(total)/float64(b.N), unit)
-}
-
 // BenchmarkSyncPool_GetMiss measures the pure backend miss path.
 //
 // The benchmark deliberately never returns values to the backend. As a result,
@@ -121,13 +110,13 @@ func BenchmarkSyncPool_GetMiss(b *testing.B) {
 	}
 
 	b.StopTimer()
-	reportPerOpMetric(b, news, "news/op")
+	testutil.ReportPerOpMetric(b, news, testutil.MetricNewsPerOp)
 }
 
-// BenchmarkSyncPool_GetPut_Pointer measures the steady-state backend round trip
-// for the intended pointer-like value shape.
+// BenchmarkSyncPool_ControlledGetPut_Pointer measures the controlled
+// steady-state backend round trip for the intended pointer-like value shape.
 //
-// The benchmark uses a stable round-trip helper that:
+// The benchmark uses a controlled steady-state helper that:
 //   - pins execution to one P;
 //   - disables GC for the duration of the benchmark body.
 //
@@ -137,8 +126,8 @@ func BenchmarkSyncPool_GetMiss(b *testing.B) {
 //
 // A small warm-up step preloads one value into the backend before the timer is
 // started so the timed loop measures the reuse path rather than the first miss.
-func BenchmarkSyncPool_GetPut_Pointer(b *testing.B) {
-	testutil.WithStablePoolRoundTrip(b, func() {
+func BenchmarkSyncPool_ControlledGetPut_Pointer(b *testing.B) {
+	testutil.WithControlledSteadyStatePoolRoundTrip(b, func() {
 		var news uint64
 
 		p := NewSyncPool(func() *syncPoolBenchmarkPointer {
@@ -146,8 +135,7 @@ func BenchmarkSyncPool_GetPut_Pointer(b *testing.B) {
 			return &syncPoolBenchmarkPointer{}
 		})
 
-		seed := p.Get()
-		p.Put(seed)
+		testutil.PrimePoolValue(p.Get, p.Put)
 		news = 0
 
 		b.ReportAllocs()
@@ -162,12 +150,12 @@ func BenchmarkSyncPool_GetPut_Pointer(b *testing.B) {
 		}
 
 		b.StopTimer()
-		reportPerOpMetric(b, news, "news/op")
+		testutil.ReportPerOpMetric(b, news, testutil.MetricNewsPerOp)
 	})
 }
 
-// BenchmarkSyncPool_GetPut_Value measures the same steady-state round trip for
-// a by-value T.
+// BenchmarkSyncPool_ControlledGetPut_Value measures the same controlled
+// steady-state round trip for a by-value T.
 //
 // This benchmark exists because the backend is generic while the package is
 // architecturally tuned for pointer-like temporary values. Comparing this case
@@ -175,8 +163,8 @@ func BenchmarkSyncPool_GetPut_Pointer(b *testing.B) {
 //
 // As in the pointer benchmark, the backend is preseeded before timing begins so
 // the loop measures the reuse path instead of including first-miss cost.
-func BenchmarkSyncPool_GetPut_Value(b *testing.B) {
-	testutil.WithStablePoolRoundTrip(b, func() {
+func BenchmarkSyncPool_ControlledGetPut_Value(b *testing.B) {
+	testutil.WithControlledSteadyStatePoolRoundTrip(b, func() {
 		var news uint64
 
 		p := NewSyncPool(func() syncPoolBenchmarkValue {
@@ -184,8 +172,7 @@ func BenchmarkSyncPool_GetPut_Value(b *testing.B) {
 			return syncPoolBenchmarkValue{}
 		})
 
-		seed := p.Get()
-		p.Put(seed)
+		testutil.PrimePoolValue(p.Get, p.Put)
 		news = 0
 
 		b.ReportAllocs()
@@ -200,12 +187,12 @@ func BenchmarkSyncPool_GetPut_Value(b *testing.B) {
 		}
 
 		b.StopTimer()
-		reportPerOpMetric(b, news, "news/op")
+		testutil.ReportPerOpMetric(b, news, testutil.MetricNewsPerOp)
 	})
 }
 
-// BenchmarkSyncPool_Parallel measures backend behaviour under concurrent Get/Put
-// traffic.
+// BenchmarkSyncPool_RealisticParallel measures backend behaviour under
+// realistic concurrent Get/Put traffic.
 //
 // This benchmark is intentionally pointer-like and reuse-oriented. Its purpose
 // is to show what the backend costs under concurrent clients before public
@@ -219,7 +206,7 @@ func BenchmarkSyncPool_GetPut_Value(b *testing.B) {
 // guarantee zero misses across all Ps, which sync.Pool does not promise, but to
 // avoid measuring an entirely cold backend when the question is concurrent
 // steady-state behaviour.
-func BenchmarkSyncPool_Parallel(b *testing.B) {
+func BenchmarkSyncPool_RealisticParallel(b *testing.B) {
 	var news atomic.Uint64
 
 	p := NewSyncPool(func() *syncPoolBenchmarkPointer {
@@ -227,10 +214,9 @@ func BenchmarkSyncPool_Parallel(b *testing.B) {
 		return &syncPoolBenchmarkPointer{}
 	})
 
-	warm := runtime.GOMAXPROCS(0) * 16
-	for i := 0; i < warm; i++ {
-		p.Put(&syncPoolBenchmarkPointer{})
-	}
+	testutil.PrefillPool(testutil.ParallelWarmCount(), func() *syncPoolBenchmarkPointer {
+		return &syncPoolBenchmarkPointer{}
+	}, p.Put)
 
 	news.Store(0)
 
@@ -247,5 +233,5 @@ func BenchmarkSyncPool_Parallel(b *testing.B) {
 	})
 
 	b.StopTimer()
-	reportPerOpMetric(b, news.Load(), "news/op")
+	testutil.ReportPerOpMetric(b, news.Load(), testutil.MetricNewsPerOp)
 }

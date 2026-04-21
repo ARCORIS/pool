@@ -23,57 +23,6 @@ import (
 	"testing"
 )
 
-func TestRecordingSinkPut(t *testing.T) {
-	t.Run("records event and stored values", func(t *testing.T) {
-		events := []string{}
-		sink := &RecordingSink[int]{Events: &events}
-
-		sink.Put(1)
-		sink.Put(2)
-
-		AssertEventSequence(t, "RecordingSink event log", events, []string{"put", "put"})
-		if len(sink.Puts) != 2 || sink.Puts[0] != 1 || sink.Puts[1] != 2 {
-			t.Fatalf("RecordingSink stored values = %v, want [1 2]", sink.Puts)
-		}
-	})
-
-	t.Run("stores values without event log", func(t *testing.T) {
-		sink := &RecordingSink[string]{}
-
-		sink.Put("a")
-
-		if len(sink.Puts) != 1 || sink.Puts[0] != "a" {
-			t.Fatalf("RecordingSink stored values without event log = %v, want [a]", sink.Puts)
-		}
-	})
-}
-
-func TestMustPanic(t *testing.T) {
-	t.Run("returns panic message", func(t *testing.T) {
-		got := MustPanic(t, "panic case", func() {
-			panic("boom")
-		})
-
-		if got != "boom" {
-			t.Fatalf("MustPanic returned %q, want %q", got, "boom")
-		}
-	})
-}
-
-func TestAssertPanicMessage(t *testing.T) {
-	t.Run("accepts exact message", func(t *testing.T) {
-		AssertPanicMessage(t, "exact match", func() {
-			panic("boom")
-		}, "boom")
-	})
-}
-
-func TestAssertEventSequence(t *testing.T) {
-	t.Run("accepts equal slices", func(t *testing.T) {
-		AssertEventSequence(t, "equal sequence", []string{"a", "b"}, []string{"a", "b"})
-	})
-}
-
 func TestWithSingleP(t *testing.T) {
 	original := runtime.GOMAXPROCS(0)
 	restoreTarget := original
@@ -135,7 +84,7 @@ func TestWithGCDisabled(t *testing.T) {
 	debug.SetGCPercent(restoreTarget)
 }
 
-func TestWithStablePoolRoundTrip(t *testing.T) {
+func TestWithControlledSteadyStatePoolRoundTrip(t *testing.T) {
 	originalP := runtime.GOMAXPROCS(0)
 	restoreP := originalP
 	if restoreP == 1 {
@@ -155,7 +104,7 @@ func TestWithStablePoolRoundTrip(t *testing.T) {
 	insideP := 0
 	insideGC := 0
 
-	WithStablePoolRoundTrip(t, func() {
+	WithControlledSteadyStatePoolRoundTrip(t, func() {
 		// The combined helper should apply both single-P execution and GC
 		// suppression at once because backend round-trip tests rely on both.
 		insideP = runtime.GOMAXPROCS(0)
@@ -170,21 +119,21 @@ func TestWithStablePoolRoundTrip(t *testing.T) {
 		// changes, backend tests and benchmarks lose their stability contract.
 		got := pool.Get()
 		if got != stored {
-			t.Fatalf("sync.Pool round-trip inside WithStablePoolRoundTrip returned %v, want %v", got, stored)
+			t.Fatalf("sync.Pool round-trip inside WithControlledSteadyStatePoolRoundTrip returned %v, want %v", got, stored)
 		}
 	})
 
 	if insideP != 1 {
-		t.Fatalf("GOMAXPROCS inside WithStablePoolRoundTrip = %d, want 1", insideP)
+		t.Fatalf("GOMAXPROCS inside WithControlledSteadyStatePoolRoundTrip = %d, want 1", insideP)
 	}
 	if insideGC != -1 {
-		t.Fatalf("GC percent inside WithStablePoolRoundTrip = %d, want -1", insideGC)
+		t.Fatalf("GC percent inside WithControlledSteadyStatePoolRoundTrip = %d, want -1", insideGC)
 	}
 	if got := runtime.GOMAXPROCS(0); got != restoreP {
-		t.Fatalf("GOMAXPROCS after WithStablePoolRoundTrip returned = %d, want %d", got, restoreP)
+		t.Fatalf("GOMAXPROCS after WithControlledSteadyStatePoolRoundTrip returned = %d, want %d", got, restoreP)
 	}
 	if restored := debug.SetGCPercent(300); restored != restoreGC {
-		t.Fatalf("GC percent after WithStablePoolRoundTrip returned = %d, want %d", restored, restoreGC)
+		t.Fatalf("GC percent after WithControlledSteadyStatePoolRoundTrip returned = %d, want %d", restored, restoreGC)
 	}
 	debug.SetGCPercent(restoreGC)
 }

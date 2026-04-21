@@ -36,7 +36,7 @@ import "arcoris.dev/pool/internal/backend"
 //	... use v as a temporary object ...
 //	p.Put(v)
 //
-// without having to manually repeat reset, reuse-admission, and backend
+// without having to manually repeat reset, reuse admission, and backend
 // interaction logic throughout the codebase.
 //
 // # Intended use
@@ -114,7 +114,7 @@ import "arcoris.dev/pool/internal/backend"
 //
 // # Performance notes
 //
-// The package is optimized for clarity of lifecycle and stable hot-path shape,
+// The package is optimized for clarity of lifecycle and stable hot path shape,
 // not for exotic specialization. The fast path of Pool.Get is a backend get.
 // The fast path of Pool.Put is:
 //

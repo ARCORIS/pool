@@ -140,7 +140,7 @@ type lifecycle[T any] struct {
 // resolved options.
 //
 // resolvedOptions guarantees that all policy hooks are non-nil. This means the
-// lifecycle controller can execute its hot-path logic without repeatedly
+// lifecycle controller can execute its hot path logic without repeatedly
 // checking for missing callbacks.
 //
 // The constructor does not perform additional validation because validation and

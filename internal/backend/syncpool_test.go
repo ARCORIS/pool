@@ -74,7 +74,7 @@ func TestNewSyncPool(t *testing.T) {
 
 func TestSyncPoolGetPutRoundTrip(t *testing.T) {
 	t.Run("pointer type", func(t *testing.T) {
-		testutil.WithStablePoolRoundTrip(t, func() {
+		testutil.WithControlledSteadyStatePoolRoundTrip(t, func() {
 			calls := 0
 			pool := NewSyncPool(func() *syncPoolTestObject {
 				calls++
@@ -95,7 +95,7 @@ func TestSyncPoolGetPutRoundTrip(t *testing.T) {
 	})
 
 	t.Run("value type", func(t *testing.T) {
-		testutil.WithStablePoolRoundTrip(t, func() {
+		testutil.WithControlledSteadyStatePoolRoundTrip(t, func() {
 			calls := 0
 			pool := NewSyncPool(func() syncPoolTestObject {
 				calls++
@@ -129,7 +129,7 @@ func TestSyncPoolTypedNilHandling(t *testing.T) {
 	})
 
 	t.Run("backend may round-trip typed nil pointer", func(t *testing.T) {
-		testutil.WithStablePoolRoundTrip(t, func() {
+		testutil.WithControlledSteadyStatePoolRoundTrip(t, func() {
 			pool := NewSyncPool(func() *syncPoolTestObject {
 				t.Fatal("constructor must not be called when a typed nil pointer was stored explicitly")
 				return &syncPoolTestObject{}
