@@ -1,20 +1,40 @@
+<div align="center">
+
 # arcoris.dev/pool
 
+**Typed temporary-object reuse for Go hot paths.**
+
+[![Start Here](https://img.shields.io/badge/Start-Docs%20Index-0F766E?style=flat)](docs/index.md)
+[![Go](https://img.shields.io/badge/Go-1.25+-1D4ED8?style=flat)](go.mod)
+[![Package Contract](https://img.shields.io/badge/Package-doc.go-0F172A?style=flat)](doc.go)
+[![Performance](https://img.shields.io/badge/Evidence-Benchmarks%20%26%20Reports-B45309?style=flat)](docs/performance/README.md)
+
+[Quick Start](#quick-start) · [Core Model](#core-model) · [Intended Use](#intended-use) · [Docs Index](docs/index.md) · [Performance](docs/performance/README.md)
+
+Policy-driven reuse · Explicit ownership transfer · Canonical return-path semantics · Benchmark-first engineering
+
+**Read by goal:** [Start here](#start-here) · [Lifecycle semantics](docs/lifecycle.md) · [Architecture](docs/architecture.md) · [Non-goals](docs/non-goals.md) · [Performance evidence](docs/performance/README.md)
+
+</div>
+
+`README.md` is the public landing page. [`docs/index.md`](docs/index.md) is the
+repository documentation index, and [`doc.go`](doc.go) remains the package
+contract for Go users and `pkg.go.dev`.
+
 `arcoris.dev/pool` is a small Go package for typed reuse of temporary mutable
-values.
+values. It stays close to the `sync.Pool` mental model, but keeps construction,
+reset, reuse admission, and drop observation explicit as policy callbacks
+instead of turning temporary-object reuse into a larger framework.
 
-It exists for code that wants the convenience of pooling without turning
-temporary-object reuse into a larger framework. Construction, reset, reuse
-admission, and drop observation stay explicit policy callbacks instead of being
-hidden behind mandatory interfaces or a wide lifecycle surface.
+## Start here
 
-The public runtime is intentionally narrow:
-
-```go
-v := p.Get()
-// use v only within the current operation
-p.Put(v)
-```
+| If you want to... | Read |
+| --- | --- |
+| understand the package in one screen | [Quick start](#quick-start) and [Core model](#core-model) |
+| learn the exact ownership and return-path contract | [Lifecycle guide](docs/lifecycle.md) |
+| understand repository structure and boundaries | [Architecture guide](docs/architecture.md) |
+| see what the package intentionally excludes | [Non-goals guide](docs/non-goals.md) |
+| inspect benchmarks, charts, and curated reports | [Performance overview](docs/performance/README.md) |
 
 ## Why it exists
 
@@ -112,8 +132,8 @@ Why:
 - performance benefits are easier to justify.
 
 Value types are supported, but large or frequently copied values should be
-benchmarked carefully. The repository benchmark layer already includes
-explicit pointer-like versus value-shape coverage.
+benchmarked carefully. The repository benchmark layer already includes explicit
+pointer-like versus value-shape coverage.
 
 ## Intended use
 
@@ -152,11 +172,15 @@ The package also does not promise:
 
 ## Documentation
 
-- [Architecture guide](docs/architecture.md)
-- [Lifecycle guide](docs/lifecycle.md)
-- [Non-goals guide](docs/non-goals.md)
-- [Performance overview](docs/performance/README.md)
-- [Initial baseline report](docs/performance/reports/2026-04-21-initial-baseline.md)
+| Document | Use when | Focus |
+| --- | --- | --- |
+| [Docs index](docs/index.md) | you want the repository map first | the best entry point into the documentation set |
+| [Package contract](doc.go) | you want the Go-facing package contract | exported API intent and runtime model |
+| [Architecture guide](docs/architecture.md) | you want the structural view | layers, boundaries, repository layout |
+| [Lifecycle guide](docs/lifecycle.md) | you need precise runtime semantics | ownership, acquisition, return-path invariants |
+| [Non-goals guide](docs/non-goals.md) | you are evaluating scope | explicit exclusions and product boundaries |
+| [Performance overview](docs/performance/README.md) | you want the evidence trail | benchmarks, charts, methodology, reports |
+| [Initial baseline report](docs/performance/reports/2026-04-21-initial-baseline.md) | you want the current curated snapshot | current benchmark interpretation and chart links |
 
 ## Performance overview
 
