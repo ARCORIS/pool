@@ -1,0 +1,163 @@
+# Copyright 2026 The ARCORIS Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"name": "CI"
+
+"on":
+  push:
+    branches:
+      - "main"
+      - "next"
+  pull_request:
+    branches:
+      - "main"
+      - "next"
+  # If merge queues are enabled later, keep the same required checks available
+  # for merge groups as well.
+  merge_group:
+    types:
+      - "checks_requested"
+  workflow_dispatch:
+
+permissions:
+  contents: "read"
+
+concurrency:
+  # Cancel superseded CI runs for the same ref. This keeps required checks fast
+  # and avoids wasting runner time on outdated commits.
+  group: "ci-${{ github.workflow }}-${{ github.ref }}"
+  cancel-in-progress: true
+
+jobs:
+  # Primary repository correctness gate.
+  #
+  # Keep functional validation here:
+  # - cross-platform `go test`
+  # - race detector
+  # - `go vet`
+  #
+  # Linting, docs integrity, benchmark tooling, and security scans stay in their
+  # dedicated workflows so this file remains the main "does the library still
+  # work correctly?" check instead of turning into a mega-workflow.
+  test-matrix:
+    name: "test (${{ matrix.os }})"
+    runs-on: "${{ matrix.os }}"
+    timeout-minutes: 20
+
+    strategy:
+      fail-fast: false
+      matrix:
+        # Keep the main functional test surface cross-platform.
+        #
+        # This repository is a Go library, so broad platform compatibility is
+        # more valuable here than in shell-heavy tools that only target one OS.
+        os:
+          - "ubuntu-latest"
+          - "macos-latest"
+          - "windows-latest"
+
+    steps:
+      - name: "Checkout repository"
+        uses: "actions/checkout@v6"
+        with:
+          # Full history is not strictly required for plain tests, but keeping
+          # checkout behavior consistent across workflows helps avoid edge cases
+          # in merge-group and later debugging scenarios.
+          fetch-depth: 0
+
+      - name: "Setup Go"
+        uses: "actions/setup-go@v6"
+        with:
+          # Use the toolchain declared by the repository.
+          go-version-file: "go.mod"
+
+          # Keep setup-go's module/build caching enabled.
+          cache: true
+
+      - name: "Show Go toolchain"
+        shell: "bash"
+        run: go version
+
+      - name: "Run unit tests"
+        shell: "bash"
+        run: |
+          set -euo pipefail
+
+          # Disable test result caching so CI always executes the current tree.
+          go test -count=1 ./...
+
+  race-and-vet:
+    name: "race-and-vet"
+    runs-on: "ubuntu-latest"
+    timeout-minutes: 25
+
+    steps:
+      - name: "Checkout repository"
+        uses: "actions/checkout@v6"
+        with:
+          fetch-depth: 0
+
+      - name: "Setup Go"
+        uses: "actions/setup-go@v6"
+        with:
+          go-version-file: "go.mod"
+          cache: true
+
+      - name: "Show Go toolchain"
+        run: go version
+
+      - name: "Run race detector"
+        shell: "bash"
+        env:
+          # Keep race behavior deterministic and visible.
+          CGO_ENABLED: "1"
+        run: |
+          set -euo pipefail
+          go test -race -count=1 ./...
+
+      - name: "Run go vet"
+        shell: "bash"
+        run: |
+          set -euo pipefail
+          go vet ./...
+
+  summary:
+    name: "ci-summary"
+    runs-on: "ubuntu-latest"
+    needs:
+      - "test-matrix"
+      - "race-and-vet"
+    if: always()
+
+    steps:
+      - name: "Evaluate upstream job results"
+        shell: "bash"
+        env:
+          TEST_MATRIX_RESULT: "${{ needs.test-matrix.result }}"
+          RACE_AND_VET_RESULT: "${{ needs.race-and-vet.result }}"
+        run: |
+          set -euo pipefail
+
+          {
+            echo "# CI Summary"
+            echo
+            echo "- test-matrix: \`${TEST_MATRIX_RESULT}\`"
+            echo "- race-and-vet: \`${RACE_AND_VET_RESULT}\`"
+            echo
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [[ "${TEST_MATRIX_RESULT}" != "success" || "${RACE_AND_VET_RESULT}" != "success" ]]; then
+            echo "One or more required CI jobs failed." >&2
+            exit 1
+          fi

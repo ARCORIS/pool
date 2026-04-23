@@ -1,0 +1,96 @@
+# Copyright 2026 The ARCORIS Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Documentation smoke check for repository-facing navigation and docs integrity.
+#
+# Keep this workflow intentionally small:
+# - no site build;
+# - no Markdown style linting;
+# - no network validation for external links.
+#
+# The purpose is to catch the repository-specific breakages that most often make
+# docs navigation confusing: missing maintained entrypoints, broken local links,
+# and missing heading anchors.
+"name": "Docs Smoke"
+
+"on":
+  # Run docs smoke on the same review surfaces that can merge repository docs
+  # changes into maintained branches.
+  push:
+    branches:
+      - "main"
+      - "next"
+  pull_request:
+    branches:
+      - "main"
+      - "next"
+  merge_group:
+  workflow_dispatch:
+
+permissions:
+  # The workflow only reads repository contents and writes no statuses or
+  # artifacts outside the standard job summary.
+  contents: "read"
+
+concurrency:
+  # Cancel stale docs checks when a new commit lands on the same ref.
+  group: "docs-smoke-${{ github.workflow }}-${{ github.ref }}"
+  cancel-in-progress: true
+
+jobs:
+  docs-smoke:
+    name: "docs-smoke"
+    runs-on: "ubuntu-latest"
+    timeout-minutes: 10
+
+    steps:
+      - name: "Checkout repository"
+        uses: "actions/checkout@v6"
+        with:
+          # Full history is unnecessary here because the docs smoke script only
+          # inspects the checked-out tree, not branch history or diff state.
+          fetch-depth: 1
+
+      - name: "Setup Python"
+        uses: "actions/setup-python@v6"
+        with:
+          # The docs smoke script uses only the standard library. A modern
+          # pinned Python runtime keeps local reproduction straightforward and CI
+          # output consistent.
+          python-version: "3.12"
+
+      - name: "Run repository docs smoke checks"
+        run: |
+          # The repository script is the source of truth for docs smoke logic.
+          # Keeping the implementation out of workflow YAML makes local
+          # debugging, code review, and future extensions much easier.
+          # Keep the validation logic in a repository script so contributors can
+          # run the same docs check locally without reading workflow YAML.
+          python3 scripts/check_docs_smoke.py \
+            --repo-root . \
+            --summary-path .docs-smoke-summary.md
+
+      - name: "Publish docs smoke summary"
+        if: always()
+        shell: "bash"
+        run: |
+          # Always publish a summary so failed runs still leave a compact result
+          # note in the GitHub UI instead of forcing maintainers into raw logs.
+          if [ -f .docs-smoke-summary.md ]; then
+            cat .docs-smoke-summary.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "# Docs Smoke Summary" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "- Result: summary not generated" >> "$GITHUB_STEP_SUMMARY"
+          fi

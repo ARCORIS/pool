@@ -1,0 +1,128 @@
+# Copyright 2026 The ARCORIS Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"name": "Attest"
+
+"on":
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  # Read repository contents to build the release bundle from the tagged source.
+  contents: "read"
+
+  # Required by GitHub artifact attestations.
+  id-token: "write"
+  attestations: "write"
+  artifact-metadata: "write"
+
+concurrency:
+  # Only one attestation workflow should run per tag at a time.
+  group: "attest-${{ github.workflow }}-${{ github.ref }}"
+  cancel-in-progress: true
+
+jobs:
+  attest-source-bundle:
+    name: "attest-source-bundle"
+    runs-on: "ubuntu-latest"
+    timeout-minutes: 15
+
+    steps:
+      - name: "Checkout tagged source"
+        uses: "actions/checkout@v6"
+        with:
+          fetch-depth: 0
+
+      - name: "Resolve release metadata"
+        id: meta
+        shell: "bash"
+        run: |
+          set -euo pipefail
+
+          if [[ "${GITHUB_REF_TYPE:-}" == "tag" ]]; then
+            tag="${GITHUB_REF_NAME}"
+          else
+            # workflow_dispatch fallback:
+            # use the current HEAD short SHA when no release tag triggered the run.
+            tag="manual-${GITHUB_SHA::12}"
+          fi
+
+          artifact_dir="dist"
+          artifact_name="arcoris-pool-${tag}-source.tar.gz"
+          checksum_name="${artifact_name}.sha256"
+
+          mkdir -p "${artifact_dir}"
+
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+          echo "artifact_dir=${artifact_dir}" >> "$GITHUB_OUTPUT"
+          echo "artifact_name=${artifact_name}" >> "$GITHUB_OUTPUT"
+          echo "checksum_name=${checksum_name}" >> "$GITHUB_OUTPUT"
+
+      - name: "Build canonical source bundle"
+        shell: "bash"
+        run: |
+          set -euo pipefail
+
+          artifact_dir="${{ steps.meta.outputs.artifact_dir }}"
+          artifact_name="${{ steps.meta.outputs.artifact_name }}"
+          checksum_name="${{ steps.meta.outputs.checksum_name }}"
+
+          # Build a deterministic source archive from the checked-out tagged tree.
+          #
+          # We use `git archive` instead of a GitHub-generated source ZIP/TGZ so:
+          # - the repository controls the exact artifact that is attested;
+          # - the artifact can also be uploaded as a workflow artifact;
+          # - future release pipelines can reuse the same source-bundle contract.
+          git archive \
+            --format=tar.gz \
+            --prefix="arcoris-pool/" \
+            -o "${artifact_dir}/${artifact_name}" \
+            HEAD
+
+          sha256sum "${artifact_dir}/${artifact_name}" | tee "${artifact_dir}/${checksum_name}"
+
+      - name: "Upload source bundle artifact"
+        uses: "actions/upload-artifact@v7"
+        with:
+          name: "source-bundle-${{ steps.meta.outputs.tag }}"
+          path: |
+            ${{ steps.meta.outputs.artifact_dir }}/${{ steps.meta.outputs.artifact_name }}
+            ${{ steps.meta.outputs.artifact_dir }}/${{ steps.meta.outputs.checksum_name }}
+          if-no-files-found: "error"
+          retention-days: 30
+
+      - name: "Generate provenance attestation"
+        uses: "actions/attest@v4"
+        with:
+          # New GitHub implementations should use `actions/attest`.
+          # `actions/attest-build-provenance` is now a thin wrapper and its own
+          # README recommends `actions/attest` for new setups.
+          subject-path: "${{ steps.meta.outputs.artifact_dir }}/${{ steps.meta.outputs.artifact_name }}"
+
+      - name: "Publish workflow summary"
+        shell: "bash"
+        run: |
+          {
+            echo "# Attestation Summary"
+            echo
+            echo "- Subject: \`${{ steps.meta.outputs.artifact_name }}\`"
+            echo "- Checksum file: \`${{ steps.meta.outputs.checksum_name }}\`"
+            echo "- Trigger: \`${{ github.event_name }}\`"
+            echo "- Ref: \`${{ github.ref }}\`"
+            echo "- Result: provenance attestation created"
+            echo
+            echo "Consumers can verify attestations with the GitHub CLI attestation commands."
+          } >> "$GITHUB_STEP_SUMMARY"

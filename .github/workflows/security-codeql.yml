@@ -1,0 +1,106 @@
+# Copyright 2026 The ARCORIS Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"name": "CodeQL"
+
+"on":
+  push:
+    branches:
+      - "main"
+      - "next"
+  pull_request:
+    branches:
+      - "main"
+      - "next"
+  schedule:
+    # Weekly scheduled scan.
+    #
+    # Keep at least one scheduled run even when normal PR traffic is low, so
+    # CodeQL still revisits the repository against newer query packs and newer
+    # vulnerability knowledge over time.
+    - cron: "27 3 * * 1"
+  workflow_dispatch:
+
+permissions:
+  # Checkout.
+  contents: "read"
+
+  # Required to upload SARIF results to the Security tab / code scanning UI.
+  security-events: "write"
+
+  # Required by private repositories and recommended by GitHub so CodeQL can
+  # fetch workflow metadata where needed.
+  actions: "read"
+
+  # Needed only on pull_request runs if the repository later chooses to enable
+  # features that annotate the PR more directly. Safe to keep read-only here.
+  pull-requests: "read"
+
+concurrency:
+  # Avoid piling up multiple CodeQL runs for the same branch / PR revision.
+  group: "codeql-${{ github.workflow }}-${{ github.ref }}"
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: "analyze (${{ matrix.language }})"
+    runs-on: "ubuntu-latest"
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # This repository is a Go library. Keeping the matrix explicit avoids
+          # a generic multi-language workflow that obscures what is actually
+          # scanned here.
+          - language: "go"
+
+    steps:
+      - name: "Checkout repository"
+        uses: "actions/checkout@v6"
+
+      # CodeQL initialization.
+      #
+      # Query choice:
+      # - `security-extended` keeps the scan focused on security-relevant checks
+      #   plus broader but still useful coverage beyond the narrowest default.
+      # - `security-and-quality` could be used later, but for a small library
+      #   this often creates more noise than signal during initial adoption.
+      #
+      # Build model:
+      # - Go is a compiled language for CodeQL purposes.
+      # - GitHub documents `autobuild` as a supported mode for Go.
+      # - This repository is intentionally simple enough that autobuild is the
+      #   right default until proven otherwise.
+      - name: "Initialize CodeQL"
+        uses: "github/codeql-action/init@v4"
+        with:
+          languages: "${{ matrix.language }}"
+          build-mode: "autobuild"
+          queries: "security-extended"
+
+      # No explicit autobuild step is needed because `build-mode: autobuild`
+      # delegates that responsibility to the CodeQL action itself.
+      #
+      # If analysis ever fails with an automatic-build error for Go, switch this
+      # workflow to `build-mode: manual` and add explicit `go build` / `go test`
+      # commands for the package set you want CodeQL to analyze.
+      #
+      # GitHub's compiled-language documentation explicitly recommends that path
+      # when autobuild is not sufficient.
+
+      - name: "Perform CodeQL analysis"
+        uses: "github/codeql-action/analyze@v4"
+        with:
+          category: "/language:${{ matrix.language }}"

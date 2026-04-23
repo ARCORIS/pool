@@ -1,0 +1,150 @@
+# Copyright 2026 The ARCORIS Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Commitlint workflow for repository-local Conventional Commit enforcement.
+#
+# Keep this workflow intentionally narrow:
+# - validate commit messages, not PR review state;
+# - use the repository's `commitlint.config.cjs`;
+# - keep event-to-commit-range logic in a repository script, not inline bash.
+"name": "Commit Lint"
+
+"on":
+  # Lint commits introduced through the ordinary PR review flow.
+  pull_request:
+    branches:
+      - "main"
+      - "next"
+    types:
+      - "opened"
+      - "synchronize"
+      - "reopened"
+      - "edited"
+      - "ready_for_review"
+
+  # If merge queues are enabled later, this trigger is required so the same
+  # status check can run for merge groups as well.
+  merge_group:
+    types:
+      - "checks_requested"
+
+  # Also lint direct pushes to release branches. This is still useful even when
+  # protected branches are enabled, because it prevents silently accepting a bad
+  # commit message on any path that bypasses or predates the PR flow.
+  push:
+    branches:
+      - "main"
+      - "next"
+
+  workflow_dispatch:
+
+permissions:
+  # Read-only access is enough for commit history inspection and PR metadata.
+  contents: "read"
+  pull-requests: "read"
+
+concurrency:
+  # Keep only the newest commit-lint run for the same ref.
+  group: "commit-lint-${{ github.workflow }}-${{ github.ref }}"
+  cancel-in-progress: true
+
+jobs:
+  commitlint:
+    # Keep the job name stable. If the repository later enables merge queues,
+    # GitHub can require this exact status check for both pull_request and
+    # merge_group events.
+    name: "commitlint"
+    runs-on: "ubuntu-latest"
+    timeout-minutes: 10
+
+    steps:
+      - name: "Checkout repository"
+        uses: "actions/checkout@v6"
+        with:
+          # commit range validation requires real history.
+          fetch-depth: 0
+
+      - name: "Setup Node.js"
+        uses: "actions/setup-node@v6"
+        with:
+          # Match the release workflow's Node policy.
+          #
+          # This repository is not a Node project and intentionally carries no
+          # `package.json` or `package-lock.json`. commitlint tooling is installed
+          # ephemerally at runtime, so automatic npm cache discovery must stay off.
+          node-version: "24"
+          package-manager-cache: false
+
+      - name: "Setup Python"
+        uses: "actions/setup-python@v6"
+        with:
+          # The repository commitlint orchestration script uses only the Python
+          # standard library, but pinning the runtime keeps workflow behavior
+          # explicit instead of depending on the runner image implicitly.
+          python-version: "3.12"
+
+      - name: "Show tool versions"
+        run: |
+          node --version
+          npm --version
+          git --version
+          python3 --version
+
+      - name: "Install standalone commitlint toolchain"
+        run: |
+          # Keep commitlint on the same repository policy as semantic-release:
+          # no committed Node manifest and no generated lockfile in CI.
+          npm install --no-save --package-lock=false --no-audit --fund=false \
+            @commitlint/cli \
+            @commitlint/config-conventional
+
+      - name: "Verify commitlint configuration exists"
+        run: test -f commitlint.config.cjs
+
+      - name: "Show commitlint version"
+        run: npx commitlint --version
+
+      - name: "Run repository commitlint orchestration"
+        env:
+          EVENT_NAME: "${{ github.event_name }}"
+          GITHUB_SHA_VALUE: "${{ github.sha }}"
+          PUSH_BEFORE: "${{ github.event.before }}"
+          PR_BASE_SHA: "${{ github.event.pull_request.base.sha }}"
+          PR_HEAD_SHA: "${{ github.event.pull_request.head.sha }}"
+          MG_BASE_SHA: "${{ github.event.merge_group.base_sha }}"
+        run: |
+          # Keep event routing and range selection in a repository script so the
+          # same logic can be understood and reproduced outside GitHub Actions.
+          python3 scripts/run_commitlint.py \
+            --repo-root . \
+            --config-path commitlint.config.cjs \
+            --summary-path .commitlint-summary.md \
+            --event-name "${EVENT_NAME}" \
+            --github-sha "${GITHUB_SHA_VALUE}" \
+            --push-before "${PUSH_BEFORE}" \
+            --pr-base-sha "${PR_BASE_SHA}" \
+            --pr-head-sha "${PR_HEAD_SHA}" \
+            --merge-group-base-sha "${MG_BASE_SHA}"
+
+      - name: "Publish commitlint summary"
+        if: always()
+        shell: "bash"
+        run: |
+          if [ -f .commitlint-summary.md ]; then
+            cat .commitlint-summary.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "# Commit Lint Summary" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "- Result: summary not generated" >> "$GITHUB_STEP_SUMMARY"
+          fi

@@ -1,0 +1,103 @@
+# Copyright 2026 The ARCORIS Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"name": "Lint"
+
+"on":
+  push:
+    branches:
+      - "main"
+      - "next"
+  pull_request:
+    branches:
+      - "main"
+      - "next"
+  # Support merge queues / merge groups if the repository enables them later.
+  merge_group:
+  workflow_dispatch:
+
+permissions:
+  # Required to read repository contents.
+  contents: "read"
+
+  # Required when `only-new-issues` is enabled on PR-like events.
+  pull-requests: "read"
+
+concurrency:
+  # Cancel superseded lint runs for the same ref so contributors do not wait on
+  # obsolete results after pushing a new commit.
+  group: "lint-${{ github.workflow }}-${{ github.ref }}"
+  cancel-in-progress: true
+
+jobs:
+  golangci-lint:
+    name: "golangci-lint"
+    runs-on: "ubuntu-latest"
+    timeout-minutes: 15
+
+    steps:
+      - name: "Checkout repository"
+        uses: "actions/checkout@v6"
+        with:
+          # Full history is not strictly required for ordinary linting, but it is
+          # useful for merge-group scenarios and keeps diff-based issue filtering
+          # predictable across event types.
+          fetch-depth: 0
+
+      - name: "Setup Go"
+        uses: "actions/setup-go@v6"
+        with:
+          # Follow the repository's declared Go toolchain instead of duplicating
+          # the version string in workflow YAML.
+          go-version-file: "go.mod"
+
+          # setup-go has built-in module/build cache support. Keep it enabled.
+          cache: true
+
+      - name: "Show tool versions"
+        run: |
+          go version
+
+      - name: "Sanity-check lint configuration"
+        run: |
+          test -f .golangci.yml
+
+      - name: "Run golangci-lint"
+        uses: "golangci/golangci-lint-action@v9"
+        with:
+          # Match the current repository lint configuration baseline.
+          #
+          # Keeping the action's golangci-lint version explicit makes the
+          # workflow predictable and prevents silent behavior changes from a
+          # floating "latest" install.
+          version: "v2.11.4"
+
+          # Validate the configuration file against the selected golangci-lint
+          # version before running the actual lint step.
+          verify: true
+
+          # On pull-request-like events, only report new issues introduced by the
+          # change set. This makes review output more actionable and avoids
+          # turning old repository debt into PR noise.
+          #
+          # On push events to release branches, lint the whole repository state.
+          only-new-issues: ${{ github.event_name == 'pull_request' || github.event_name == 'merge_group' }}
+
+          # Refresh caches periodically so stale linter state does not linger
+          # forever while still preserving the performance benefit of caching.
+          cache-invalidation-interval: 7
+
+          # Keep the default text output. With actions/setup-go present, GitHub
+          # annotations already work correctly through standard problem matchers.
+          problem-matchers: false

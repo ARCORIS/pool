@@ -1,0 +1,118 @@
+# Copyright 2026 The ARCORIS Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Dependency Review policy for `arcoris.dev/pool`.
+#
+# Design goals:
+# - block pull requests that introduce known vulnerable dependencies at or above
+#   a meaningful severity threshold;
+# - check both runtime and non-runtime dependency scopes because this repository
+#   also depends on GitHub Actions, benchmark tooling, and release automation;
+# - enforce an allow-list approach for dependency licenses instead of relying on
+#   the deprecated deny-list option;
+# - keep the policy explicit and maintainable in one file instead of scattering
+#   configuration inline across workflow steps.
+#
+# Notes:
+# - This file is consumed by `actions/dependency-review-action`.
+# - Branch protection must mark the `dependency-review` workflow as a required
+#   status check if you want failing reviews to block merges.
+# - Unknown licenses are reported by the action but do not fail the workflow.
+# - The allow-list below is intentionally pragmatic for a public Go library and
+#   GitHub automation stack. Tighten it further only if you are prepared to
+#   curate dependency metadata and exceptions actively.
+
+# Fail the review when a newly introduced dependency has a vulnerability of
+# moderate severity or higher.
+#
+# Why `moderate`:
+# - `low` is usually too noisy for a general PR gate;
+# - `high` can be too permissive for a public library;
+# - `moderate` is a practical middle ground for repository-wide review.
+fail-on-severity: "moderate"
+
+# Review all dependency scopes that may matter to this repository.
+#
+# `runtime`
+#   User-facing library dependencies.
+#
+# `development`
+#   Tooling, CI, linters, generators, and other non-runtime dependencies.
+#
+# `unknown`
+#   Dependencies whose scope cannot be determined reliably.
+fail-on-scopes:
+  - "runtime"
+  - "development"
+  - "unknown"
+
+# Keep both core checks enabled.
+vulnerability-check: true
+license-check: true
+
+# Surface the result directly in the pull request only when there is a failure.
+#
+# This gives contributors actionable context without creating constant PR noise
+# for successful runs.
+comment-summary-in-pr: "on-failure"
+
+# This repository uses the dependency review job as an actual merge gate, so
+# warnings are not enough.
+warn-only: false
+
+# Include OpenSSF Scorecard context in the review output for changed
+# dependencies. This is advisory context, not a hard merge block by itself.
+show-openssf-scorecard: true
+warn-on-openssf-scorecard-level: 5
+
+# Show the first patched version for vulnerable dependencies when available.
+show-patched-versions: true
+
+# Allowed licenses.
+#
+# Use allow-listing rather than deny-listing because `deny-licenses` is
+# deprecated by the action and allow-listing makes policy intent explicit.
+#
+# This list focuses on commonly accepted permissive or weak-copyleft licenses
+# that are realistic for Go modules and GitHub Actions dependencies.
+allow-licenses:
+  - "Apache-2.0"
+  - "BSD-2-Clause"
+  - "BSD-3-Clause"
+  - "BSD-3-Clause-Clear"
+  - "0BSD"
+  - "ISC"
+  - "MIT"
+  - "MPL-2.0"
+  - "Python-2.0"
+  - "Unlicense"
+  - "Zlib"
+  - "BSL-1.0"
+  - "BlueOak-1.0.0"
+  - "CC0-1.0"
+
+# The following options are intentionally not configured yet:
+#
+# - allow-ghsas
+#   No advisory-specific exceptions are approved by default.
+#
+# - deny-packages / deny-groups
+#   No package or namespace is blocked preemptively at the moment.
+#   Add these only when the repository has a concrete policy reason.
+#
+# - allow-dependencies-licenses
+#   No package-level license exceptions are approved by default.
+#
+# If any of those become necessary, they should be added with an inline comment
+# explaining the exact repository policy reason.

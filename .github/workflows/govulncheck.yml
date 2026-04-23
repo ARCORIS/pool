@@ -1,0 +1,106 @@
+# Copyright 2026 The ARCORIS Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"name": "Govulncheck"
+
+"on":
+  push:
+    branches:
+      - "main"
+      - "next"
+  pull_request:
+    branches:
+      - "main"
+      - "next"
+  merge_group:
+  workflow_dispatch:
+  schedule:
+    # Weekly scheduled scan so the repository is re-checked even when there are
+    # no dependency-changing pull requests in flight.
+    - cron: "13 5 * * 2"
+
+permissions:
+  contents: "read"
+
+concurrency:
+  # Keep only the newest govulncheck run for the same ref.
+  group: "govulncheck-${{ github.workflow }}-${{ github.ref }}"
+  cancel-in-progress: true
+
+jobs:
+  govulncheck:
+    name: "govulncheck"
+    runs-on: "ubuntu-latest"
+    timeout-minutes: 15
+
+    steps:
+      - name: "Checkout repository"
+        uses: "actions/checkout@v6"
+        with:
+          # Full history is not strictly required by govulncheck itself, but it
+          # keeps repository state consistent across push / PR / merge-group jobs
+          # and matches the rest of the security workflow layer.
+          fetch-depth: 0
+
+      - name: "Setup Go"
+        uses: "actions/setup-go@v6"
+        with:
+          # Respect the repository-declared Go version instead of duplicating it
+          # in workflow YAML.
+          go-version-file: "go.mod"
+          cache: true
+
+      - name: "Show Go toolchain"
+        run: go version
+
+      - name: "Install govulncheck"
+        # Keep the vulnerability scanner current on scheduled runs instead of
+        # pinning an older CLI indefinitely. This mirrors the intent of other
+        # hosted security scanners in the workflow layer.
+        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+
+      - name: "Show govulncheck version"
+        run: govulncheck -version || true
+
+      - name: "Run govulncheck"
+        shell: "bash"
+        run: |
+          set -euo pipefail
+
+          # Scan all packages in the module.
+          #
+          # We intentionally use the official CLI directly instead of the
+          # experimental GitHub Action wrapper. The Go team documents both
+          # approaches, and the CLI path is a simpler production baseline for a
+          # small Go library.
+          #
+          # Text output is deliberate:
+          # - with text output, govulncheck follows its vulnerability-detection
+          #   exit behavior in a way that can fail the job when findings matter;
+          # - JSON or SARIF output may return success even when vulnerabilities
+          #   are present, which is better suited for aggregation pipelines than
+          #   for a simple PR gate.
+          govulncheck ./...
+
+      - name: "Write workflow summary"
+        if: success()
+        shell: "bash"
+        run: |
+          {
+            echo "# Govulncheck Summary"
+            echo
+            echo "- Scan target: \`./...\`"
+            echo "- Tool: \`govulncheck\`"
+            echo "- Result: success"
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,201 @@
+# Copyright 2026 The ARCORIS Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"name": "Benchmark Smoke"
+
+"on":
+  push:
+    branches:
+      - "main"
+      - "next"
+  pull_request:
+    branches:
+      - "main"
+      - "next"
+  merge_group:
+  workflow_dispatch:
+
+permissions:
+  contents: "read"
+
+concurrency:
+  # Keep only the newest benchmark-smoke run for the same ref.
+  group: "benchmark-smoke-${{ github.workflow }}-${{ github.ref }}"
+  cancel-in-progress: true
+
+jobs:
+  benchmark-smoke:
+    name: "benchmark-smoke"
+    runs-on: "ubuntu-latest"
+    timeout-minutes: 20
+
+    steps:
+      - name: "Checkout repository"
+        uses: "actions/checkout@v6"
+        with:
+          fetch-depth: 0
+
+      - name: "Setup Go"
+        uses: "actions/setup-go@v6"
+        with:
+          # Follow the repository-declared Go toolchain.
+          go-version-file: "go.mod"
+          cache: true
+
+      - name: "Setup Python"
+        uses: "actions/setup-python@v6"
+        with:
+          # Benchmark chart smoke should use the same pinned dependency contract
+          # the repository documents locally.
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: "requirements.txt"
+
+      - name: "Install chart-generation dependencies"
+        run: |
+          python3 -m pip install --upgrade pip
+          python3 -m pip install --requirement requirements.txt
+
+      - name: "Show tool versions"
+        run: |
+          go version
+          python3 --version
+          bash --version | head -n 1
+
+      - name: "Verify benchmark tooling entrypoints exist"
+        shell: "bash"
+        run: |
+          set -euo pipefail
+
+          test -f bench/scripts/common.sh
+          test -f bench/scripts/paths.sh
+          test -f bench/scripts/capture_env.sh
+          test -f bench/scripts/run_benchmarks.sh
+          test -f bench/scripts/compare_benchmarks.sh
+          test -f bench/scripts/profile_benchmarks.sh
+          test -f bench/scripts/run_performance_pipeline.sh
+          test -f bench/scripts/plot_benchmarks.py
+
+      - name: "Lint shell script syntax"
+        shell: "bash"
+        run: |
+          set -euo pipefail
+
+          bash -n bench/scripts/common.sh
+          bash -n bench/scripts/paths.sh
+          bash -n bench/scripts/capture_env.sh
+          bash -n bench/scripts/run_benchmarks.sh
+          bash -n bench/scripts/compare_benchmarks.sh
+          bash -n bench/scripts/profile_benchmarks.sh
+          bash -n bench/scripts/run_performance_pipeline.sh
+
+      - name: "Verify CLI help surfaces"
+        shell: "bash"
+        run: |
+          set -euo pipefail
+
+          bench/scripts/run_benchmarks.sh --help >/dev/null
+          bench/scripts/compare_benchmarks.sh --help >/dev/null
+          bench/scripts/profile_benchmarks.sh --help >/dev/null
+          bench/scripts/run_performance_pipeline.sh --help >/dev/null
+          python3 bench/scripts/plot_benchmarks.py --help >/dev/null
+
+      - name: "Run backend benchmark smoke"
+        shell: "bash"
+        run: |
+          set -euo pipefail
+
+          mkdir -p .ci-smoke
+          go test ./internal/backend \
+            -run '^$' \
+            -bench '^BenchmarkSyncPool_GetMiss$' \
+            -benchmem \
+            -count 1 \
+            > .ci-smoke/backend-smoke.txt
+
+          test -s .ci-smoke/backend-smoke.txt
+
+      - name: "Run repository benchmark-family smoke"
+        shell: "bash"
+        run: |
+          set -euo pipefail
+
+          # Exercise one representative benchmark from each maintained benchmark
+          # family exposed by the repository suite taxonomy:
+          # - baselines
+          # - paths
+          # - shapes
+          # - parallel
+          # - metrics
+          #
+          # This is intentionally a smoke run, not a benchmark evidence run.
+          # Use -count 1 and a narrow benchmark selector so CI validates that the
+          # families still compile and execute without pretending to produce
+          # report-quality performance data.
+          go test . \
+            -run '^$' \
+            -bench '^(BenchmarkBaseline_Controlled_ARCORISPool_Pointer|BenchmarkPaths_ControlledAccepted|BenchmarkShapes_ControlledPointerSmall|BenchmarkParallel_RealisticAccepted|BenchmarkMetrics_ControlledAcceptedWarmPath)$' \
+            -benchmem \
+            -count 1 \
+            > .ci-smoke/root-smoke.txt
+
+          test -s .ci-smoke/root-smoke.txt
+
+      - name: "Generate snapshot chart smoke artifact"
+        shell: "bash"
+        run: |
+          set -euo pipefail
+
+          mkdir -p .ci-smoke/charts
+
+          python3 bench/scripts/plot_benchmarks.py \
+            --mode snapshot \
+            --input .ci-smoke/root-smoke.txt \
+            --output-dir .ci-smoke/charts \
+            --max-rows-per-chart 10 \
+            --title-prefix "CI Smoke"
+
+          chart_count="$(find .ci-smoke/charts -type f -name '*.svg' | wc -l | tr -d ' ')"
+          if [[ "${chart_count}" -lt 1 ]]; then
+            echo "expected at least one generated SVG chart, found ${chart_count}" >&2
+            exit 1
+          fi
+
+      - name: "Publish workflow summary"
+        shell: "bash"
+        run: |
+          {
+            echo "# Benchmark Smoke Summary"
+            echo
+            echo "- Verified benchmark shell entrypoints and CLI help surfaces"
+            echo "- Verified shell script syntax"
+            echo "- Executed backend benchmark smoke: \`BenchmarkSyncPool_GetMiss\`"
+            echo "- Executed representative root benchmark smoke across:"
+            echo "  - baselines"
+            echo "  - paths"
+            echo "  - shapes"
+            echo "  - parallel"
+            echo "  - metrics"
+            echo "- Verified snapshot chart generation from raw benchmark smoke output"
+            echo
+            echo "Result: success"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: "Upload smoke artifacts"
+        uses: "actions/upload-artifact@v7"
+        with:
+          name: "benchmark-smoke-artifacts"
+          path: ".ci-smoke"
+          retention-days: 7
+          if-no-files-found: "error"

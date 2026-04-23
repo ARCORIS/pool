@@ -1,0 +1,116 @@
+# Copyright 2026 The ARCORIS Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"name": "Scorecards"
+
+"on":
+  push:
+    branches:
+      - "main"
+  schedule:
+    # Weekly scheduled scan on the default branch.
+    #
+    # Keep a scheduled run even if repository activity is low, so the published
+    # Scorecard result is refreshed against newer query logic and newer
+    # repository state over time.
+    - cron: "31 4 * * 1"
+
+# Important workflow restrictions when `publish_results: true` is enabled:
+#
+# - do not add top-level `env` or `defaults`
+# - do not grant workflow-level write permissions
+# - keep privileged permissions scoped to the Scorecards job only
+#
+# These restrictions come from the official Scorecard Action publishing model.
+permissions: "read-all"
+
+concurrency:
+  # Keep only one Scorecards run active for the default branch.
+  #
+  # This avoids overlapping result publication and reduces unnecessary pressure
+  # on the Scorecard API / code scanning upload path.
+  group: "scorecards-${{ github.workflow }}-${{ github.ref }}"
+  cancel-in-progress: true
+
+jobs:
+  analysis:
+    name: "scorecards-analysis"
+    runs-on: "ubuntu-latest"
+
+    # No job-level env/defaults here.
+    #
+    # The official Scorecard publishing path restricts the workflow shape when
+    # `publish_results: true` is enabled.
+    permissions:
+      # Required to publish SARIF to GitHub code scanning.
+      security-events: "write"
+
+      # Required by scorecard-action v2 when `publish_results: true` is enabled.
+      # The action uses GitHub OIDC to sign and publish trustworthy results.
+      id-token: "write"
+
+      # Read permissions recommended by the official action so it can inspect
+      # repository state and detect relevant checks reliably.
+      contents: "read"
+      actions: "read"
+      issues: "read"
+      pull-requests: "read"
+      checks: "read"
+
+    steps:
+      # Harden the runner first.
+      #
+      # This action is explicitly allowed by the official Scorecard publishing
+      # restrictions and adds useful visibility into outbound network behavior.
+      - name: "Harden runner"
+        uses: "step-security/harden-runner@v2"
+        with:
+          egress-policy: "audit"
+
+      - name: "Checkout repository"
+        uses: "actions/checkout@v6"
+        with:
+          # Full history improves the quality of some repository checks and keeps
+          # the action closer to the official examples.
+          fetch-depth: 0
+
+      - name: "Run OpenSSF Scorecard analysis"
+        id: scorecard
+        uses: "ossf/scorecard-action@v2.4.3"
+        with:
+          # Store results in SARIF so they can be uploaded to GitHub code
+          # scanning and shown in the Security tab.
+          results_file: "results.sarif"
+          results_format: "sarif"
+
+          # Publish results to the public Scorecard API / badge pipeline.
+          #
+          # This enables:
+          # - scorecard.dev / API visibility
+          # - repository badge support
+          # - more up-to-date published repository score data
+          publish_results: true
+
+      - name: "Upload SARIF to GitHub code scanning"
+        uses: "github/codeql-action/upload-sarif@v4"
+        with:
+          sarif_file: "results.sarif"
+
+      - name: "Upload Scorecard artifact"
+        uses: "actions/upload-artifact@v7"
+        with:
+          name: "scorecard-sarif"
+          path: "results.sarif"
+          retention-days: 7
+          if-no-files-found: "error"
