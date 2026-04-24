@@ -26,7 +26,7 @@ import (
 // setting before returning.
 //
 // The helper is intended for tests and benchmarks that need deterministic
-// single-P behaviour, especially around sync.Pool local-cache semantics. The
+// single-P behaviour, especially around [sync.Pool] local-cache semantics. The
 // restoration is scoped to the callback itself rather than deferred to test
 // cleanup so later assertions in the same test see the original runtime state.
 func WithSingleP(tb testing.TB, fn func()) {
@@ -42,7 +42,7 @@ func WithSingleP(tb testing.TB, fn func()) {
 // GC target before returning.
 //
 // This helper is useful when a test or benchmark needs to prevent transient GC
-// cycles from discarding sync.Pool state between tightly-coupled Put/Get steps.
+// cycles from discarding [sync.Pool] state between tightly-coupled Put/Get steps.
 // As with WithSingleP, restoration happens immediately after fn returns so the
 // helper composes safely inside larger tests.
 func WithGCDisabled(tb testing.TB, fn func()) {
@@ -54,18 +54,19 @@ func WithGCDisabled(tb testing.TB, fn func()) {
 	fn()
 }
 
-// WithControlledSteadyStatePoolRoundTrip makes immediate Put/Get assertions
-// deterministic enough for controlled tests and benchmarks that rely on
-// sync.Pool local-cache reuse.
+// WithControlledSteadyStatePoolRoundTrip scopes a callback to a quieter
+// runtime state for pool-focused tests and benchmarks.
 //
-// Pinning execution to one P avoids per-P handoff surprises, and disabling GC
-// prevents cached values from being discarded between Put and Get. The helper
-// restores both runtime settings before it returns to the caller.
+// Pinning execution to one P avoids per-P handoff noise, and disabling GC
+// reduces the chance that cached values disappear between tightly coupled pool
+// operations. The helper restores both runtime settings before it returns to
+// the caller.
 //
-// This helper intentionally creates an idealized local steady-state execution
-// mode. It is appropriate for controlled hot path measurements and for unit
-// tests that need deterministic immediate reuse. It MUST NOT be described as a
-// general runtime mode in performance reports.
+// Despite the historical name, this helper does not turn exact same-instance
+// reuse into a valid contract. Tests must still avoid asserting that a raw
+// [sync.Pool]-backed path returns the exact value that was just stored. Use the
+// helper only to reduce scheduler and GC noise around controlled scenarios, not
+// to claim deterministic retention semantics.
 func WithControlledSteadyStatePoolRoundTrip(tb testing.TB, fn func()) {
 	tb.Helper()
 

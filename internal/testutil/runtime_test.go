@@ -19,7 +19,6 @@ package testutil
 import (
 	"runtime"
 	"runtime/debug"
-	"sync"
 	"testing"
 )
 
@@ -106,21 +105,11 @@ func TestWithControlledSteadyStatePoolRoundTrip(t *testing.T) {
 
 	WithControlledSteadyStatePoolRoundTrip(t, func() {
 		// The combined helper should apply both single-P execution and GC
-		// suppression at once because backend round-trip tests rely on both.
+		// suppression at once. The helper deliberately constrains runtime noise;
+		// it does not upgrade raw [sync.Pool] reuse into a same-instance
+		// guarantee, so this test checks only the runtime controls themselves.
 		insideP = runtime.GOMAXPROCS(0)
 		insideGC = debug.SetGCPercent(250)
-
-		var pool sync.Pool
-		stored := &struct{ ID int }{ID: 42}
-		pool.Put(stored)
-
-		// A direct sync.Pool immediate round trip is the behavioural reason this
-		// helper exists. If this ever stops working under the scoped runtime
-		// changes, backend tests and benchmarks lose their stability contract.
-		got := pool.Get()
-		if got != stored {
-			t.Fatalf("sync.Pool round-trip inside WithControlledSteadyStatePoolRoundTrip returned %v, want %v", got, stored)
-		}
 	})
 
 	if insideP != 1 {

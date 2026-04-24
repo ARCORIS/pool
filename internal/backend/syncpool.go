@@ -36,16 +36,16 @@ import (
 // creation, reset, reuse admission, and explicit drop handling. None of that
 // policy belongs in the low-level storage backend. This type exists to isolate
 // the backend-specific details of storing and retrieving reusable values via
-// sync.Pool while keeping the public runtime small and policy-oriented.
+// [sync.Pool] while keeping the public runtime small and policy-oriented.
 //
 // In practice, SyncPool is the boundary that converts an untyped any-based
 // backend into a typed generic backend suitable for the rest of the package.
 // It centralizes the only place where values cross the boundary between the
-// generic public API and the underlying sync.Pool API.
+// generic public API and the underlying [sync.Pool] API.
 //
-// Why this type exists instead of using sync.Pool directly everywhere
+// Why this type exists instead of using [sync.Pool] directly everywhere
 //
-//   - It keeps all sync.Pool-specific mechanics in one internal location.
+//   - It keeps all [sync.Pool]-specific mechanics in one internal location.
 //   - It prevents the public pool runtime from repeating any <-> T conversion
 //     logic.
 //   - It makes future backend replacement or debug instrumentation local.
@@ -60,12 +60,12 @@ import (
 //   - NewSyncPool requires a non-nil constructor.
 //   - The zero value of SyncPool is not ready for use.
 //   - SyncPool values must not be copied after first use because the type owns
-//     an embedded sync.Pool.
+//     an embedded [sync.Pool].
 //
 // # Concurrency
 //
 // SyncPool is safe for concurrent use because it delegates storage and reuse
-// mechanics to sync.Pool, which is itself designed for concurrent access.
+// mechanics to [sync.Pool], which is itself designed for concurrent access.
 //
 // # Performance notes
 //
@@ -86,29 +86,29 @@ import (
 //
 // # Internal invariant
 //
-// Every value stored in the underlying sync.Pool must have dynamic type T.
+// Every value stored in the underlying [sync.Pool] must have dynamic type T.
 // Any violation of that invariant indicates an internal programming error in
 // this repository, not a recoverable user-space condition.
 //
 // The type is deliberately small and stable. If the project later adds debug
 // instrumentation, alternate backends, or build-tag-specific behaviour, those
 // changes should continue to preserve this file as the narrow typed bridge over
-// sync.Pool.
+// [sync.Pool].
 type SyncPool[T any] struct {
 	pool sync.Pool
 }
 
-// NewSyncPool constructs a typed sync.Pool-backed backend.
+// NewSyncPool constructs a typed [sync.Pool]-backed backend.
 //
 // newFn is mandatory. It is used as the slow-path constructor whenever the
-// underlying sync.Pool cannot provide a reusable value.
+// underlying [sync.Pool] cannot provide a reusable value.
 //
 // NewSyncPool panics if newFn is nil. Although higher layers already validate
 // this condition when resolving public Options, the backend defends its own
 // contract explicitly so that it remains correct and self-contained when read
 // or tested in isolation.
 //
-// The constructor installed into sync.Pool.New must return values whose dynamic
+// The constructor installed into [sync.Pool.New] must return values whose dynamic
 // type is exactly T. That invariant is required for Get to remain type-safe.
 func NewSyncPool[T any](newFn func() T) *SyncPool[T] {
 	if newFn == nil {
@@ -126,8 +126,8 @@ func NewSyncPool[T any](newFn func() T) *SyncPool[T] {
 //
 // Behaviour
 //
-//   - If sync.Pool has a previously stored value, that value is returned.
-//   - Otherwise sync.Pool invokes the constructor installed by NewSyncPool.
+//   - If [sync.Pool] has a previously stored value, that value is returned.
+//   - Otherwise [sync.Pool] invokes the constructor installed by NewSyncPool.
 //   - The result is asserted back to T and returned to the caller.
 //
 // This method performs no lifecycle work beyond retrieval. In particular, Get
@@ -146,12 +146,7 @@ func (p *SyncPool[T]) Get() T {
 		panic("pool: Get called on nil SyncPool")
 	}
 
-	value := p.pool.Get()
-	typed, ok := value.(T)
-	if !ok {
-		panic(unexpectedTypePanic[T](value))
-	}
-	return typed
+	return typedPoolValue[T](p.pool.Get())
 }
 
 // Put stores a value for future reuse.
@@ -171,6 +166,20 @@ func (p *SyncPool[T]) Put(value T) {
 	}
 
 	p.pool.Put(value)
+}
+
+// typedPoolValue converts a raw backend value into the expected generic type.
+//
+// Keeping the assertion logic in a small helper makes the backend fast path
+// readable and gives tests a deterministic boundary for impossible type-mismatch
+// scenarios. The helper does not attempt recovery: a mismatched value means the
+// internal backend invariant has already been violated.
+func typedPoolValue[T any](value any) T {
+	typed, ok := value.(T)
+	if !ok {
+		panic(unexpectedTypePanic[T](value))
+	}
+	return typed
 }
 
 // unexpectedTypePanic formats a stable panic message for impossible backend

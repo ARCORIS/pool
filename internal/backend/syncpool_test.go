@@ -25,7 +25,8 @@ import (
 // syncPoolTestObject is intentionally compact.
 //
 // The backend contract under test is about type preservation, constructor
-// behaviour, and round-trip reuse semantics. A small object keeps the tests
+// behaviour, and reuse eligibility rather than stable same-instance retention.
+// A small object keeps the tests
 // focused on those invariants instead of unrelated domain behaviour.
 type syncPoolTestObject struct {
 	ID int
@@ -72,7 +73,7 @@ func TestNewSyncPool(t *testing.T) {
 	})
 }
 
-func TestSyncPoolGetPutRoundTrip(t *testing.T) {
+func TestSyncPoolGetAfterPut(t *testing.T) {
 	t.Run("pointer type", func(t *testing.T) {
 		testutil.WithControlledSteadyStatePoolRoundTrip(t, func() {
 			calls := 0
@@ -85,12 +86,7 @@ func TestSyncPoolGetPutRoundTrip(t *testing.T) {
 			pool.Put(stored)
 
 			got := pool.Get()
-			if got != stored {
-				t.Fatalf("Get() returned pointer %p after Put(), want %p", got, stored)
-			}
-			if calls != 0 {
-				t.Fatalf("constructor call count after pointer Put()/Get() round-trip = %d, want 0", calls)
-			}
+			assertPointerGetAfterPut(t, got, stored, calls)
 		})
 	})
 
@@ -106,12 +102,7 @@ func TestSyncPoolGetPutRoundTrip(t *testing.T) {
 			pool.Put(stored)
 
 			got := pool.Get()
-			if got != stored {
-				t.Fatalf("Get() returned value %+v after Put(), want %+v", got, stored)
-			}
-			if calls != 0 {
-				t.Fatalf("constructor call count after value Put()/Get() round-trip = %d, want 0", calls)
-			}
+			assertValueGetAfterPut(t, got, stored, calls)
 		})
 	})
 }
@@ -128,19 +119,29 @@ func TestSyncPoolTypedNilHandling(t *testing.T) {
 		}
 	})
 
-	t.Run("backend may round-trip typed nil pointer", func(t *testing.T) {
+	t.Run("stored typed nil pointer does not break backend type safety", func(t *testing.T) {
 		testutil.WithControlledSteadyStatePoolRoundTrip(t, func() {
+			calls := 0
 			pool := NewSyncPool(func() *syncPoolTestObject {
-				t.Fatal("constructor must not be called when a typed nil pointer was stored explicitly")
-				return &syncPoolTestObject{}
+				calls++
+				return &syncPoolTestObject{ID: calls}
 			})
 
 			var stored *syncPoolTestObject
 			pool.Put(stored)
 
 			got := pool.Get()
-			if got != nil {
-				t.Fatalf("Get() result after storing typed nil pointer = %v, want nil", got)
+			switch {
+			case got == nil:
+				if calls != 0 {
+					t.Fatalf("constructor call count after nil pointer round-trip = %d, want 0 when stored nil was reused", calls)
+				}
+			case got.ID == 1:
+				if calls != 1 {
+					t.Fatalf("constructor call count after nil pointer fallback = %d, want 1", calls)
+				}
+			default:
+				t.Fatalf("Get() result after storing typed nil pointer = %+v, want nil or fresh constructor value", got)
 			}
 		})
 	})
@@ -174,40 +175,42 @@ func TestSyncPoolNilReceiverPanics(t *testing.T) {
 	})
 }
 
-func TestSyncPoolGetPanicsOnUnexpectedStoredType(t *testing.T) {
+func TestTypedPoolValue(t *testing.T) {
+	t.Run("matching value type", func(t *testing.T) {
+		got := typedPoolValue[syncPoolTestObject](syncPoolTestObject{ID: 42})
+		if got != (syncPoolTestObject{ID: 42}) {
+			t.Fatalf("typedPoolValue[syncPoolTestObject](...) = %+v, want %+v", got, syncPoolTestObject{ID: 42})
+		}
+	})
+
+	t.Run("matching typed nil pointer", func(t *testing.T) {
+		var want *syncPoolTestObject
+		got := typedPoolValue[*syncPoolTestObject](want)
+		if got != nil {
+			t.Fatalf("typedPoolValue[*syncPoolTestObject](typed nil) = %v, want nil", got)
+		}
+	})
+}
+
+func TestTypedPoolValuePanicsOnUnexpectedType(t *testing.T) {
 	t.Run("wrong non-nil dynamic type", func(t *testing.T) {
-		pool := NewSyncPool(func() *syncPoolTestObject {
-			return &syncPoolTestObject{}
-		})
-
-		// This intentionally bypasses the typed API to verify the internal
-		// invariant: every value stored in the embedded sync.Pool must still
-		// have dynamic type T when read back.
-		pool.pool.Put(1)
-
 		testutil.AssertPanicMessage(
 			t,
-			"Get() with scalar value of wrong type stored in embedded sync.Pool",
+			"typedPoolValue[*syncPoolTestObject](1)",
 			func() {
-				_ = pool.Get()
+				_ = typedPoolValue[*syncPoolTestObject](1)
 			},
 			unexpectedTypePanic[*syncPoolTestObject](1),
 		)
 	})
 
 	t.Run("wrong typed nil dynamic type", func(t *testing.T) {
-		pool := NewSyncPool(func() *syncPoolTestObject {
-			return &syncPoolTestObject{}
-		})
-
 		var wrong *syncPoolOtherObject
-		pool.pool.Put(wrong)
-
 		testutil.AssertPanicMessage(
 			t,
-			"Get() with typed nil pointer of wrong type stored in embedded sync.Pool",
+			"typedPoolValue[*syncPoolTestObject](wrong)",
 			func() {
-				_ = pool.Get()
+				_ = typedPoolValue[*syncPoolTestObject](wrong)
 			},
 			unexpectedTypePanic[*syncPoolTestObject](wrong),
 		)
@@ -230,4 +233,48 @@ func TestUnexpectedTypePanic(t *testing.T) {
 			t.Fatalf("unexpectedTypePanic[*syncPoolTestObject](123) = %q, want %q", got, want)
 		}
 	})
+}
+
+func assertPointerGetAfterPut(
+	t *testing.T,
+	got *syncPoolTestObject,
+	stored *syncPoolTestObject,
+	constructorCalls int,
+) {
+	t.Helper()
+
+	switch {
+	case got == stored:
+		if constructorCalls != 0 {
+			t.Fatalf("constructor call count after pointer reuse = %d, want 0", constructorCalls)
+		}
+	case got != nil && got.ID == 1:
+		if constructorCalls != 1 {
+			t.Fatalf("constructor call count after pointer fallback construction = %d, want 1", constructorCalls)
+		}
+	default:
+		t.Fatalf("Get() after pointer Put() = %+v, want stored pointer or fresh constructor value", got)
+	}
+}
+
+func assertValueGetAfterPut(
+	t *testing.T,
+	got syncPoolTestObject,
+	stored syncPoolTestObject,
+	constructorCalls int,
+) {
+	t.Helper()
+
+	switch {
+	case got == stored:
+		if constructorCalls != 0 {
+			t.Fatalf("constructor call count after value reuse = %d, want 0", constructorCalls)
+		}
+	case got == (syncPoolTestObject{ID: 1}):
+		if constructorCalls != 1 {
+			t.Fatalf("constructor call count after value fallback construction = %d, want 1", constructorCalls)
+		}
+	default:
+		t.Fatalf("Get() after value Put() = %+v, want stored value or fresh constructor value", got)
+	}
 }
