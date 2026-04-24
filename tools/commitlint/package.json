@@ -1,0 +1,11 @@
+{
+  "name": "@arcoris/pool-commitlint-tools",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Pinned commitlint toolchain for repository CI.",
+  "license": "Apache-2.0",
+  "dependencies": {
+    "@commitlint/cli": "19.8.1",
+    "@commitlint/config-conventional": "19.8.1"
+  }
+}

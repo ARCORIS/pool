@@ -65,13 +65,10 @@ jobs:
         run: go version
 
       - name: "Install govulncheck"
-        # TODO(security): pin govulncheck to a reviewed module version in a
-        # dedicated toolchain-pinning change. This PR only pins GitHub Actions
-        # dependencies and token permissions.
-        # Keep the vulnerability scanner current on scheduled runs instead of
-        # pinning an older CLI indefinitely. This mirrors the intent of other
-        # hosted security scanners in the workflow layer.
-        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+        # govulncheck is pinned here as CI scanner tooling instead of being added to
+        # the library module graph. This keeps the public Go module dependency-free
+        # while avoiding floating tool installation.
+        run: go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
 
       - name: "Show govulncheck version"
         run: govulncheck -version || true

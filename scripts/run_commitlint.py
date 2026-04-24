@@ -35,7 +35,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 
-DEFAULT_COMMITLINT_COMMAND = ("npx", "commitlint")
+DEFAULT_COMMITLINT_COMMAND = ("tools/commitlint/node_modules/.bin/commitlint",)
 SUPPORTED_EVENTS = ("pull_request", "merge_group", "push")
 
 
