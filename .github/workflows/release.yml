@@ -114,6 +114,13 @@ jobs:
       name: "release"
 
     steps:
+      - name: "Checkout repository"
+        uses: "actions/checkout@v5"
+        with:
+          # `gh release create --verify-tag` shells out to git and expects a
+          # real repository checkout with full history and tags.
+          fetch-depth: 0
+
       - name: "Publish GitHub release from stable tag"
         env:
           GH_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
