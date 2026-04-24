@@ -76,38 +76,11 @@ func FuzzPoolLifecycleOrder(f *testing.F) {
 		}
 
 		if allowReuse {
-			testutil.AssertEventSequence(
-				t,
-				"accepted fuzz lifecycle order",
-				events,
-				[]string{fmt.Sprintf("reuse:%d", len(payload)), "reset", "put"},
-			)
-			if resetCalls != 1 {
-				t.Fatalf("reset call count on accepted path = %d, want 1", resetCalls)
-			}
-			if dropCalls != 0 {
-				t.Fatalf("drop call count on accepted path = %d, want 0", dropCalls)
-			}
-			if len(sink.Puts) != 1 {
-				t.Fatalf("sink put count on accepted path = %d, want 1", len(sink.Puts))
-			}
-		} else {
-			testutil.AssertEventSequence(
-				t,
-				"rejected fuzz lifecycle order",
-				events,
-				[]string{fmt.Sprintf("reuse:%d", len(payload)), "drop"},
-			)
-			if resetCalls != 0 {
-				t.Fatalf("reset call count on rejected path = %d, want 0", resetCalls)
-			}
-			if dropCalls != 1 {
-				t.Fatalf("drop call count on rejected path = %d, want 1", dropCalls)
-			}
-			if len(sink.Puts) != 0 {
-				t.Fatalf("sink put count on rejected path = %d, want 0", len(sink.Puts))
-			}
+			assertFuzzAcceptedLifecycle(t, payload, events, resetCalls, dropCalls, sink)
+			return
 		}
+
+		assertFuzzRejectedLifecycle(t, payload, events, resetCalls, dropCalls, sink)
 	})
 }
 
@@ -168,10 +141,8 @@ func FuzzPoolAcceptedValueIsResetBeforeReuse(f *testing.F) {
 			if len(got.Payload) != 0 {
 				t.Fatalf("reused value payload length = %d, want 0", len(got.Payload))
 			}
-		} else {
-			if newCalls != 1 {
-				t.Fatalf("new call count after fallback Get() = %d, want 1", newCalls)
-			}
+		} else if newCalls != 1 {
+			t.Fatalf("new call count after fallback Get() = %d, want 1", newCalls)
 		}
 		pool.Put(got)
 	})
@@ -250,4 +221,58 @@ func fuzzTrimBytes(payload []byte, limit int) []byte {
 		payload = payload[:limit]
 	}
 	return append([]byte(nil), payload...)
+}
+
+func assertFuzzAcceptedLifecycle(
+	t *testing.T,
+	payload []byte,
+	events []string,
+	resetCalls int,
+	dropCalls int,
+	sink *testutil.RecordingSink[*fuzzPoolObject],
+) {
+	t.Helper()
+
+	testutil.AssertEventSequence(
+		t,
+		"accepted fuzz lifecycle order",
+		events,
+		[]string{fmt.Sprintf("reuse:%d", len(payload)), "reset", "put"},
+	)
+	if resetCalls != 1 {
+		t.Fatalf("reset call count on accepted path = %d, want 1", resetCalls)
+	}
+	if dropCalls != 0 {
+		t.Fatalf("drop call count on accepted path = %d, want 0", dropCalls)
+	}
+	if len(sink.Puts) != 1 {
+		t.Fatalf("sink put count on accepted path = %d, want 1", len(sink.Puts))
+	}
+}
+
+func assertFuzzRejectedLifecycle(
+	t *testing.T,
+	payload []byte,
+	events []string,
+	resetCalls int,
+	dropCalls int,
+	sink *testutil.RecordingSink[*fuzzPoolObject],
+) {
+	t.Helper()
+
+	testutil.AssertEventSequence(
+		t,
+		"rejected fuzz lifecycle order",
+		events,
+		[]string{fmt.Sprintf("reuse:%d", len(payload)), "drop"},
+	)
+	if resetCalls != 0 {
+		t.Fatalf("reset call count on rejected path = %d, want 0", resetCalls)
+	}
+	if dropCalls != 1 {
+		t.Fatalf("drop call count on rejected path = %d, want 1", dropCalls)
+	}
+	if len(sink.Puts) != 0 {
+		t.Fatalf("sink put count on rejected path = %d, want 0", len(sink.Puts))
+	}
 }

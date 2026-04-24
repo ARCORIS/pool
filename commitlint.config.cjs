@@ -90,9 +90,11 @@
 
 module.exports = {
   /**
-   * Start from the official conventional baseline.
+   * Resolve the conventional preset through the repository-local pinned
+   * commitlint toolchain. The project intentionally does not keep a root
+   * package.json or root node_modules directory.
    */
-  extends: ['@commitlint/config-conventional'],
+  extends: ['./tools/commitlint/node_modules/@commitlint/config-conventional'],
 
   /**
    * Keep default ignore behavior enabled.
@@ -206,7 +208,7 @@ module.exports = {
      *
      * This avoids ambiguous breaking markers and keeps history explicit.
      */
-    'breaking-change-exclamation-mark': [2, 'always'],
+    'arcoris-breaking-change-marker': [2, 'always'],
 
     /**
      * Repository-specific policy:
@@ -225,6 +227,28 @@ module.exports = {
   plugins: [
     {
       rules: {
+        /**
+         * Require both the header `!` marker and a breaking-change footer note.
+         *
+         * The pinned commitlint toolchain used by this repository does not ship
+         * a built-in rule for this repository policy, so we enforce it here with
+         * the same intent: either both markers are present, or neither is.
+         */
+        'arcoris-breaking-change-marker': ({header, notes}) => {
+          const value = header || '';
+          const parsedNotes = Array.isArray(notes) ? notes : [];
+          const hasHeaderBang = /^[^:(]+(?:\([^)]+\))?!:/.test(value);
+          const hasBreakingNote = parsedNotes.some((note) => {
+            const title = typeof note?.title === 'string' ? note.title : '';
+            return /^BREAKING(?:\s+CHANGE|\s+CHANGES)?$/.test(title);
+          });
+
+          return [
+            hasHeaderBang === hasBreakingNote,
+            'breaking changes must use both ! in the header and a BREAKING CHANGE footer',
+          ];
+        },
+
         /**
          * Reject manual release-commit headers that imitate semantic-release.
          *

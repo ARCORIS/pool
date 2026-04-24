@@ -64,8 +64,14 @@ jobs:
       - name: "Show Go toolchain"
         run: go version
 
+      - name: "Install govulncheck"
+        # govulncheck is pinned here as CI scanner tooling instead of being added to
+        # the library module graph. This keeps the public Go module dependency-free
+        # while avoiding floating tool installation.
+        run: go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
+
       - name: "Show govulncheck version"
-        run: go tool govulncheck -version || true
+        run: govulncheck -version || true
 
       - name: "Run govulncheck"
         shell: "bash"
@@ -85,7 +91,7 @@ jobs:
           # - JSON or SARIF output may return success even when vulnerabilities
           #   are present, which is better suited for aggregation pipelines than
           #   for a simple PR gate.
-          go tool govulncheck ./...
+          govulncheck ./...
 
       - name: "Write workflow summary"
         if: success()
