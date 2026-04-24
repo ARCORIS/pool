@@ -274,3 +274,6 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Repository-local pinned Node tool installs
+tools/commitlint/node_modules/

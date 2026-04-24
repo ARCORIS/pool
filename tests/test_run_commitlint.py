@@ -170,6 +170,12 @@ class HelperFunctionTests(CommitlintTestCase):
         )
         self.assertEqual(absolute, (self.repo_root / "absolute.md").resolve())
 
+    def test_default_commitlint_command_uses_local_pinned_binary(self) -> None:
+        self.assertEqual(
+            run_commitlint.DEFAULT_COMMITLINT_COMMAND,
+            ("tools/commitlint/node_modules/.bin/commitlint",),
+        )
+
     def test_write_summary_creates_parent_directory(self) -> None:
         report = run_commitlint.CommitLintReport(
             event_name="push",

@@ -67,9 +67,9 @@ jobs:
         with:
           # Match the release workflow's Node policy.
           #
-          # This repository is not a Node project and intentionally carries no
-          # `package.json` or `package-lock.json`. commitlint tooling is installed
-          # ephemerally at runtime, so automatic npm cache discovery must stay off.
+          # This repository is not a Node application and intentionally keeps
+          # its pinned commitlint toolchain isolated under `tools/commitlint`
+          # instead of adding a root-level Node manifest.
           node-version: "24"
           package-manager-cache: false
 
@@ -89,20 +89,15 @@ jobs:
           git --version
           python3 --version
 
-      - name: "Install standalone commitlint toolchain"
+      - name: "Install pinned commitlint toolchain"
         run: |
-          # Keep commitlint on the same repository Node-tooling policy as other
-          # automation here: no committed Node manifest and no generated lockfile
-          # in CI.
-          npm install --no-save --package-lock=false --no-audit --fund=false \
-            @commitlint/cli \
-            @commitlint/config-conventional
+          npm ci --prefix tools/commitlint --ignore-scripts --no-audit --fund=false
 
       - name: "Verify commitlint configuration exists"
         run: test -f commitlint.config.cjs
 
       - name: "Show commitlint version"
-        run: npx commitlint --version
+        run: tools/commitlint/node_modules/.bin/commitlint --version
 
       - name: "Lint pull request title"
         if: ${{ github.event_name == 'pull_request' }}
@@ -111,7 +106,7 @@ jobs:
         run: |
           # Squash merges often use the PR title as the final commit header.
           # Keep the title under the same Conventional Commit policy as commits.
-          printf '%s\n' "${PR_TITLE}" | npx commitlint --config commitlint.config.cjs --verbose
+          printf '%s\n' "${PR_TITLE}" | tools/commitlint/node_modules/.bin/commitlint --config commitlint.config.cjs --verbose
 
       - name: "Run repository commitlint orchestration"
         env:
