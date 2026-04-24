@@ -16,17 +16,17 @@ blank_issues_enabled: false
 
 contact_links:
   - name: "Security report"
-    url: "https://github.com/ARCORIS/pool/security/policy"
+    url: "https://github.com/arcoris/pool/security/policy"
     about: "Report vulnerabilities privately according to the repository security policy."
 
   - name: "Discussions"
-    url: "https://github.com/ARCORIS/pool/discussions"
+    url: "https://github.com/arcoris/pool/discussions"
     about: "Use Discussions for broader usage questions, general feedback, and open-ended conversation."
 
   - name: "Repository documentation"
-    url: "https://github.com/ARCORIS/pool#readme"
+    url: "https://github.com/arcoris/pool#readme"
     about: "Start with the README and the docs tree before opening a clarification issue."
 
   - name: "Performance documentation"
-    url: "https://github.com/ARCORIS/pool/tree/main/docs/performance"
+    url: "https://github.com/arcoris/pool/tree/main/docs/performance"
     about: "Benchmark workflow, charts, methodology, and reports live here."
