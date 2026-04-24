@@ -25,6 +25,9 @@
         required: true
         type: "string"
 
+permissions:
+  contents: "read"
+
 concurrency:
   # Keep only one stable release publication active for the same ref at a time.
   #
@@ -47,13 +50,15 @@ jobs:
 
     steps:
       - name: "Checkout stable tag source"
-        uses: "actions/checkout@v6"
+        # actions/checkout v6
+        uses: "actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd"
         with:
           # Stable releases are published from an existing SemVer tag, not from
           # branch pushes. For manual dispatches, the caller must provide the
           # tag explicitly.
           ref: "${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref_name }}"
           fetch-depth: 0
+          persist-credentials: false
 
       - name: "Resolve and validate stable release tag"
         id: meta
@@ -84,7 +89,8 @@ jobs:
           echo "release_sha=${release_sha}" >> "$GITHUB_OUTPUT"
 
       - name: "Setup Go"
-        uses: "actions/setup-go@v6"
+        # actions/setup-go v6
+        uses: "actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c"
         with:
           go-version-file: "go.mod"
           cache: true
@@ -115,11 +121,13 @@ jobs:
 
     steps:
       - name: "Checkout repository"
-        uses: "actions/checkout@v5"
+        # actions/checkout v6
+        uses: "actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd"
         with:
           # `gh release create --verify-tag` shells out to git and expects a
           # real repository checkout with full history and tags.
           fetch-depth: 0
+          persist-credentials: false
 
       - name: "Publish GitHub release from stable tag"
         env:

@@ -29,11 +29,6 @@ permissions:
   # Read repository contents to build the release bundle from the tagged source.
   contents: "read"
 
-  # Required by GitHub artifact attestations.
-  id-token: "write"
-  attestations: "write"
-  artifact-metadata: "write"
-
 concurrency:
   # Only one attestation workflow should run per stable tag at a time.
   group: "attest-${{ github.workflow }}-${{ github.ref }}"
@@ -44,14 +39,21 @@ jobs:
     name: "attest-source-bundle"
     runs-on: "ubuntu-latest"
     timeout-minutes: 15
+    permissions:
+      contents: "read"
+      id-token: "write"
+      attestations: "write"
+      artifact-metadata: "write"
 
     steps:
       - name: "Checkout tagged source"
-        uses: "actions/checkout@v6"
+        # actions/checkout v6
+        uses: "actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd"
         with:
           # Attest only stable tags. Manual dispatches must supply the exact tag.
           ref: "${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref_name }}"
           fetch-depth: 0
+          persist-credentials: false
 
       - name: "Resolve release metadata"
         id: meta
@@ -109,7 +111,8 @@ jobs:
           sha256sum "${artifact_dir}/${artifact_name}" | tee "${artifact_dir}/${checksum_name}"
 
       - name: "Upload source bundle artifact"
-        uses: "actions/upload-artifact@v7"
+        # actions/upload-artifact v7
+        uses: "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a"
         with:
           name: "source-bundle-${{ steps.meta.outputs.tag }}"
           path: |
@@ -119,7 +122,8 @@ jobs:
           retention-days: 30
 
       - name: "Generate provenance attestation"
-        uses: "actions/attest@v4"
+        # actions/attest v4
+        uses: "actions/attest@59d89421af93a897026c735860bf21b6eb4f7b26"
         with:
           subject-path: "${{ steps.meta.outputs.artifact_dir }}/${{ steps.meta.outputs.artifact_name }}"
 

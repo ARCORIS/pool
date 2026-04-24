@@ -54,13 +54,16 @@ jobs:
 
     steps:
       - name: "Checkout repository"
-        uses: "actions/checkout@v6"
+        # actions/checkout v6
+        uses: "actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd"
         with:
           # commit range validation requires real history.
           fetch-depth: 0
+          persist-credentials: false
 
       - name: "Setup Node.js"
-        uses: "actions/setup-node@v6"
+        # actions/setup-node v6
+        uses: "actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e"
         with:
           # Match the release workflow's Node policy.
           #
@@ -71,7 +74,8 @@ jobs:
           package-manager-cache: false
 
       - name: "Setup Python"
-        uses: "actions/setup-python@v6"
+        # actions/setup-python v6
+        uses: "actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405"
         with:
           # The repository commitlint orchestration script uses only the Python
           # standard library, but pinning the runtime keeps workflow behavior

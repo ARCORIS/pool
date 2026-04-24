@@ -43,15 +43,18 @@ jobs:
 
     steps:
       - name: "Checkout repository"
-        uses: "actions/checkout@v6"
+        # actions/checkout v6
+        uses: "actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd"
         with:
           # Full history is not strictly required by govulncheck itself, but it
           # keeps repository state consistent across push / PR jobs
           # and matches the rest of the security workflow layer.
           fetch-depth: 0
+          persist-credentials: false
 
       - name: "Setup Go"
-        uses: "actions/setup-go@v6"
+        # actions/setup-go v6
+        uses: "actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c"
         with:
           # Respect the repository-declared Go version instead of duplicating it
           # in workflow YAML.
@@ -62,6 +65,9 @@ jobs:
         run: go version
 
       - name: "Install govulncheck"
+        # TODO(security): pin govulncheck to a reviewed module version in a
+        # dedicated toolchain-pinning change. This PR only pins GitHub Actions
+        # dependencies and token permissions.
         # Keep the vulnerability scanner current on scheduled runs instead of
         # pinning an older CLI indefinitely. This mirrors the intent of other
         # hosted security scanners in the workflow layer.

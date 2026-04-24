@@ -34,17 +34,6 @@ permissions:
   # Checkout.
   contents: "read"
 
-  # Required to upload SARIF results to the Security tab / code scanning UI.
-  security-events: "write"
-
-  # Required by private repositories and recommended by GitHub so CodeQL can
-  # fetch workflow metadata where needed.
-  actions: "read"
-
-  # Needed only on pull_request runs if the repository later chooses to enable
-  # features that annotate the PR more directly. Safe to keep read-only here.
-  pull-requests: "read"
-
 concurrency:
   # Avoid piling up multiple CodeQL runs for the same branch / PR revision.
   group: "codeql-${{ github.workflow }}-${{ github.ref }}"
@@ -54,6 +43,11 @@ jobs:
   analyze:
     name: "analyze (${{ matrix.language }})"
     runs-on: "ubuntu-latest"
+    permissions:
+      contents: "read"
+      actions: "read"
+      security-events: "write"
+      pull-requests: "read"
 
     strategy:
       fail-fast: false
@@ -66,7 +60,10 @@ jobs:
 
     steps:
       - name: "Checkout repository"
-        uses: "actions/checkout@v6"
+        # actions/checkout v6
+        uses: "actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd"
+        with:
+          persist-credentials: false
 
       # CodeQL initialization.
       #
@@ -82,7 +79,8 @@ jobs:
       # - This repository is intentionally simple enough that autobuild is the
       #   right default until proven otherwise.
       - name: "Initialize CodeQL"
-        uses: "github/codeql-action/init@v4"
+        # github/codeql-action/init v4
+        uses: "github/codeql-action/init@95e58e9a2cdfd71adc6e0353d5c52f41a045d225"
         with:
           languages: "${{ matrix.language }}"
           build-mode: "autobuild"
@@ -99,6 +97,7 @@ jobs:
       # when autobuild is not sufficient.
 
       - name: "Perform CodeQL analysis"
-        uses: "github/codeql-action/analyze@v4"
+        # github/codeql-action/analyze v4
+        uses: "github/codeql-action/analyze@95e58e9a2cdfd71adc6e0353d5c52f41a045d225"
         with:
           category: "/language:${{ matrix.language }}"

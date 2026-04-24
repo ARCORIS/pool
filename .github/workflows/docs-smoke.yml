@@ -55,14 +55,17 @@ jobs:
 
     steps:
       - name: "Checkout repository"
-        uses: "actions/checkout@v6"
+        # actions/checkout v6
+        uses: "actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd"
         with:
           # Full history is unnecessary here because the docs smoke script only
           # inspects the checked-out tree, not branch history or diff state.
           fetch-depth: 1
+          persist-credentials: false
 
       - name: "Setup Python"
-        uses: "actions/setup-python@v6"
+        # actions/setup-python v6
+        uses: "actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405"
         with:
           # The docs smoke script uses only the standard library. A modern
           # pinned Python runtime keeps local reproduction straightforward and CI
